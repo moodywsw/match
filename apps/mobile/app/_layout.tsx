@@ -13,21 +13,33 @@ export { ErrorBoundary } from 'expo-router';
 SplashScreen.preventAutoHideAsync();
 
 function AuthGate({ children }: { children: React.ReactNode }) {
-  const { session, loading } = useAuth();
+  const { session, profile, loading } = useAuth();
   const segments = useSegments();
   const router = useRouter();
 
   useEffect(() => {
     if (loading) return;
 
-    const inAuthGroup = segments[0] === '(auth)';
+    const root = segments[0];
+    const inAuth = root === '(auth)';
+    const inOnboarding = root === '(onboarding)';
 
-    if (!session && !inAuthGroup) {
-      router.replace('/(auth)/sign-in');
-    } else if (session && inAuthGroup) {
+    if (!session) {
+      if (!inAuth) router.replace('/(auth)/sign-in');
+      return;
+    }
+
+    const needsOnboarding = profile != null && !profile.onboarding_complete;
+
+    if (needsOnboarding) {
+      if (!inOnboarding) router.replace('/(onboarding)');
+      return;
+    }
+
+    if (inAuth || inOnboarding) {
       router.replace('/(tabs)/discover');
     }
-  }, [session, loading, segments, router]);
+  }, [session, profile, loading, segments, router]);
 
   useEffect(() => {
     if (!loading) {
@@ -56,7 +68,11 @@ export default function RootLayout() {
           <Stack screenOptions={{ headerShown: false }}>
             <Stack.Screen name="index" />
             <Stack.Screen name="(auth)" />
+            <Stack.Screen name="(onboarding)" />
             <Stack.Screen name="(tabs)" />
+            <Stack.Screen name="chat/[conversationId]" options={{ headerShown: false }} />
+            <Stack.Screen name="events" options={{ headerShown: false }} />
+            <Stack.Screen name="live" options={{ headerShown: false }} />
             <Stack.Screen name="+not-found" />
           </Stack>
         </AuthGate>

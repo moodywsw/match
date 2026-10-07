@@ -191,7 +191,7 @@ export default function DiscoverScreen() {
       <Text style={styles.title}>Discover</Text>
       <Text style={styles.badge}>
         {usingLive
-          ? 'LIVE · profiles from Supabase'
+          ? `LIVE · ${deck.length} left in deck · profiles from Supabase`
           : 'DEMO · no discoverable profiles yet (likes on demo cards are not saved)'}
       </Text>
       {error ? <Text style={styles.error}>{error}</Text> : null}

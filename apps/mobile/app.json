@@ -36,7 +36,13 @@
           "backgroundColor": "#0B0B0F"
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Match needs photo access to set your profile pictures."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
