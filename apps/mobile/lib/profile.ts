@@ -128,19 +128,22 @@ async function fetchOutgoingLikedIds(userId: string): Promise<Set<string>> {
 }
 
 /**
- * IDs the caller has blocked. RLS only returns rows where auth.uid() = blocker_id,
- * so we query that direction explicitly (people who blocked us are not visible under RLS).
+ * Peer ids blocked either way for the signed-in user.
+ * Uses SECURITY DEFINER RPC `get_blocked_peer_ids()` so inbound blocks
+ * (where the caller is blocked_id) are visible without widening RLS on `blocks`.
  */
-async function fetchBlockedIds(userId: string): Promise<Set<string>> {
-  const { data, error } = await supabase
-    .from('blocks')
-    .select('blocked_id')
-    .eq('blocker_id', userId);
+async function fetchBlockedIds(_userId: string): Promise<Set<string>> {
+  const { data, error } = await supabase.rpc('get_blocked_peer_ids');
   if (error) {
-    console.warn('[match] blocks query failed', error.message);
-    return new Set();
+    console.warn('[match] get_blocked_peer_ids failed', error.message);
+    // Fallback: outbound blocks only (RLS-visible)
+    const { data: rows } = await supabase
+      .from('blocks')
+      .select('blocked_id')
+      .eq('blocker_id', _userId);
+    return new Set((rows || []).map((r) => r.blocked_id as string));
   }
-  return new Set((data || []).map((r) => r.blocked_id as string));
+  return new Set((data || []) as string[]);
 }
 
 export async function fetchPrimaryPhotos(

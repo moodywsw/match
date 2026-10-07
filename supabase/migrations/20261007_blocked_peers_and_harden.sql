@@ -1,0 +1,4 @@
+-- Applied: blocked_peers_rpc + harden_security_definer_grants
+-- get_blocked_peer_ids() / is_blocked_either_way(a,b) — SECURITY DEFINER, authenticated only
+-- Revoked RPC execute on try_create_match / create_conversation_for_match from anon+authenticated
+-- try_create_match search_path = public

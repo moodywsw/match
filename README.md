@@ -149,7 +149,7 @@ Store the service role only in Supabase secrets / CI — never in the repo or cl
 | IAP / RevenueCat | **Scaffold only** (`lib/iap.ts` — no purchases, no keys) |
 | EAS preview/production config | **Scaffolded** (`eas.json` + `app.config.ts` placeholders) |
 | Interests catalog + `user_interests` | **Real** (seeded; onboarding/profile multi-select; Discover chips) |
-| Block / report | **Real** (Discover ⋯ menu → `blocks` / `reports`; deck excludes blocked) |
+| Block / report | **Real** (Discover ⋯ → `blocks` / `reports`; deck excludes **either-way** via `get_blocked_peer_ids()`) |
 | Verification selfie pipeline | **Not built** |
 
 ## Core loop to exercise
