@@ -1,3 +1,4 @@
+import { fetchInterestLabelsForUsers } from './interests';
 import { supabase } from './supabase';
 
 export type Profile = {
@@ -28,6 +29,7 @@ export type DiscoverProfile = {
   approx_lng: number | null;
   photoUrl: string | null;
   age: number | null;
+  interests: string[];
   /** false for local demo cards that must not hit public.likes */
   isLive: boolean;
 };
@@ -125,22 +127,20 @@ async function fetchOutgoingLikedIds(userId: string): Promise<Set<string>> {
   return new Set((data || []).map((r) => r.liked_id as string));
 }
 
+/**
+ * IDs the caller has blocked. RLS only returns rows where auth.uid() = blocker_id,
+ * so we query that direction explicitly (people who blocked us are not visible under RLS).
+ */
 async function fetchBlockedIds(userId: string): Promise<Set<string>> {
   const { data, error } = await supabase
     .from('blocks')
-    .select('blocker_id, blocked_id')
-    .or(`blocker_id.eq.${userId},blocked_id.eq.${userId}`);
+    .select('blocked_id')
+    .eq('blocker_id', userId);
   if (error) {
-    // Table may be empty / policy edge — don't hard-fail discovery
     console.warn('[match] blocks query failed', error.message);
     return new Set();
   }
-  const ids = new Set<string>();
-  for (const row of data || []) {
-    if (row.blocker_id === userId) ids.add(row.blocked_id);
-    if (row.blocked_id === userId) ids.add(row.blocker_id);
-  }
-  return ids;
+  return new Set((data || []).map((r) => r.blocked_id as string));
 }
 
 export async function fetchPrimaryPhotos(
@@ -196,7 +196,11 @@ export async function fetchDiscoverDeck(
     (r) => !liked.has(r.id) && !blocked.has(r.id)
   );
   const sliced = rows.slice(0, limit);
-  const photos = await fetchPrimaryPhotos(sliced.map((r) => r.id));
+  const ids = sliced.map((r) => r.id);
+  const [photos, interestMap] = await Promise.all([
+    fetchPrimaryPhotos(ids),
+    fetchInterestLabelsForUsers(ids),
+  ]);
 
   return sliced.map((r) => ({
     id: r.id,
@@ -211,6 +215,7 @@ export async function fetchDiscoverDeck(
     approx_lng: r.approx_lng,
     photoUrl: photos[r.id] ?? null,
     age: ageFromBirthDate(r.birth_date),
+    interests: interestMap[r.id] ?? [],
     isLive: true,
   }));
 }
@@ -277,6 +282,7 @@ export function demoDiscoverProfiles(): DiscoverProfile[] {
       approx_lng: null,
       photoUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=800&q=80',
       age: 27,
+      interests: ['Indie', 'Coffee', 'Live concerts'],
       isLive: false,
     },
     {
@@ -292,6 +298,7 @@ export function demoDiscoverProfiles(): DiscoverProfile[] {
       approx_lng: null,
       photoUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=800&q=80',
       age: 24,
+      interests: ['Hiking', 'Photography', 'Coffee'],
       isLive: false,
     },
     {
@@ -307,6 +314,7 @@ export function demoDiscoverProfiles(): DiscoverProfile[] {
       approx_lng: null,
       photoUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=800&q=80',
       age: 29,
+      interests: ['Live concerts', 'Travel'],
       isLive: false,
     },
   ];

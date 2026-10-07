@@ -148,6 +148,8 @@ Store the service role only in Supabase secrets / CI — never in the repo or cl
 | Push permission + token → `push_tokens` | **Stub wired** (needs EAS projectId + APNs/FCM to deliver) |
 | IAP / RevenueCat | **Scaffold only** (`lib/iap.ts` — no purchases, no keys) |
 | EAS preview/production config | **Scaffolded** (`eas.json` + `app.config.ts` placeholders) |
+| Interests catalog + `user_interests` | **Real** (seeded; onboarding/profile multi-select; Discover chips) |
+| Block / report | **Real** (Discover ⋯ menu → `blocks` / `reports`; deck excludes blocked) |
 | Verification selfie pipeline | **Not built** |
 
 ## Core loop to exercise

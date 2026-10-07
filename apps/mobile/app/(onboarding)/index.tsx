@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -12,7 +12,13 @@ import {
   View,
 } from 'react-native';
 
+import { T } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
+import {
+  fetchAllInterests,
+  setUserInterests,
+  type Interest,
+} from '@/lib/interests';
 import { defaultBirthDate, upsertOwnProfile } from '@/lib/profile';
 
 const INTENTIONS = [
@@ -35,19 +41,34 @@ export default function OnboardingScreen() {
   const [city, setCity] = useState(profile?.city || '');
   const [intention, setIntention] = useState<string>('figuring_out');
   const [bio, setBio] = useState(profile?.bio || '');
+  const [catalog, setCatalog] = useState<Interest[]>([]);
+  const [selected, setSelected] = useState<number[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    fetchAllInterests()
+      .then(setCatalog)
+      .catch((e) => console.warn(e));
+  }, []);
+
   const title = useMemo(
-    () => ['About you', 'Basics', 'Intention', 'Bio'][step],
+    () => ['About you', 'Basics', 'Intention', 'Interests', 'Bio'][step],
     [step]
   );
+
+  function toggleInterest(id: number) {
+    setSelected((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  }
 
   async function finish() {
     if (!user?.id) return;
     const ageNum = Number(age);
     if (!name.trim()) {
       setError('Name is required');
+      setStep(0);
       return;
     }
     if (!Number.isFinite(ageNum) || ageNum < 18 || ageNum > 99) {
@@ -68,6 +89,7 @@ export default function OnboardingScreen() {
         onboarding_complete: true,
         is_discoverable: true,
       });
+      await setUserInterests(user.id, selected);
       await refreshProfile();
       router.replace('/(tabs)/discover');
     } catch (err) {
@@ -83,13 +105,18 @@ export default function OnboardingScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <Text style={styles.brand}>Match</Text>
+        <View style={styles.progress}>
+          {[0, 1, 2, 3, 4].map((i) => (
+            <View key={i} style={[styles.dot, i <= step && styles.dotOn]} />
+          ))}
+        </View>
         <Text style={styles.title}>{title}</Text>
-        <Text style={styles.sub}>Step {step + 1} of 4 — unlock Discover</Text>
+        <Text style={styles.sub}>Step {step + 1} of 5 — unlock Discover</Text>
 
         {step === 0 && (
           <>
             <Text style={styles.label}>Display name</Text>
-            <TextInput style={styles.input} value={name} onChangeText={setName} placeholderTextColor="#6B7280" />
+            <TextInput style={styles.input} value={name} onChangeText={setName} placeholderTextColor={T.mutedDim} />
           </>
         )}
 
@@ -101,7 +128,7 @@ export default function OnboardingScreen() {
               value={age}
               onChangeText={setAge}
               keyboardType="number-pad"
-              placeholderTextColor="#6B7280"
+              placeholderTextColor={T.mutedDim}
             />
             <Text style={styles.label}>Gender</Text>
             <View style={styles.chips}>
@@ -115,7 +142,7 @@ export default function OnboardingScreen() {
               ))}
             </View>
             <Text style={styles.label}>City</Text>
-            <TextInput style={styles.input} value={city} onChangeText={setCity} placeholderTextColor="#6B7280" />
+            <TextInput style={styles.input} value={city} onChangeText={setCity} placeholderTextColor={T.mutedDim} />
           </>
         )}
 
@@ -136,6 +163,28 @@ export default function OnboardingScreen() {
 
         {step === 3 && (
           <>
+            <Text style={styles.sub}>Pick a few tastes (optional)</Text>
+            <View style={styles.chips}>
+              {catalog.map((i) => {
+                const on = selected.includes(i.id);
+                return (
+                  <Pressable
+                    key={i.id}
+                    style={[styles.chip, on && styles.chipViolet]}
+                    onPress={() => toggleInterest(i.id)}>
+                    <Text style={[styles.chipText, on && styles.chipTextOn]}>{i.label}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+            {!catalog.length ? (
+              <Text style={styles.sub}>Loading interests…</Text>
+            ) : null}
+          </>
+        )}
+
+        {step === 4 && (
+          <>
             <Text style={styles.label}>Short bio</Text>
             <TextInput
               style={[styles.input, styles.bio]}
@@ -143,7 +192,7 @@ export default function OnboardingScreen() {
               onChangeText={setBio}
               multiline
               placeholder="What should people know?"
-              placeholderTextColor="#6B7280"
+              placeholderTextColor={T.mutedDim}
             />
           </>
         )}
@@ -158,7 +207,7 @@ export default function OnboardingScreen() {
           ) : (
             <View />
           )}
-          {step < 3 ? (
+          {step < 4 ? (
             <Pressable style={styles.next} onPress={() => setStep((s) => s + 1)}>
               <Text style={styles.nextText}>Next</Text>
             </Pressable>
@@ -178,18 +227,21 @@ export default function OnboardingScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#0B0B0F' },
+  screen: { flex: 1, backgroundColor: T.bg },
   content: { padding: 24, paddingTop: 48 },
-  brand: { color: '#E11D48', fontWeight: '900', fontSize: 22 },
-  title: { color: '#F4F4F5', fontSize: 28, fontWeight: '800', marginTop: 12 },
-  sub: { color: '#9CA3AF', marginBottom: 24, marginTop: 4 },
+  brand: { color: T.rose, fontWeight: '900', fontSize: 22 },
+  progress: { flexDirection: 'row', gap: 6, marginTop: 16, marginBottom: 8 },
+  dot: { flex: 1, height: 4, borderRadius: 2, backgroundColor: T.surface2 },
+  dotOn: { backgroundColor: T.rose },
+  title: { color: T.text, fontSize: 28, fontWeight: '800', marginTop: 12 },
+  sub: { color: T.muted, marginBottom: 20, marginTop: 4 },
   label: { color: '#D4D4D8', fontWeight: '600', marginBottom: 6 },
   input: {
-    backgroundColor: '#18181B',
+    backgroundColor: T.surface,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: T.border,
     borderRadius: 12,
-    color: '#F4F4F5',
+    color: T.text,
     paddingHorizontal: 14,
     paddingVertical: 12,
     marginBottom: 14,
@@ -199,19 +251,20 @@ const styles = StyleSheet.create({
   chip: {
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: '#3F3F46',
+    borderColor: T.border,
     paddingHorizontal: 12,
     paddingVertical: 8,
-    backgroundColor: '#18181B',
+    backgroundColor: T.surface2,
   },
-  chipOn: { borderColor: '#E11D48', backgroundColor: 'rgba(225,29,72,0.15)' },
-  chipText: { color: '#A1A1AA', fontWeight: '600', fontSize: 13 },
+  chipOn: { borderColor: T.rose, backgroundColor: 'rgba(255,85,115,0.18)' },
+  chipViolet: { borderColor: T.violet, backgroundColor: 'rgba(139,107,255,0.18)' },
+  chipText: { color: T.muted, fontWeight: '600', fontSize: 13 },
   chipTextOn: { color: '#fff' },
   error: { color: '#FB7185', marginBottom: 8 },
   nav: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 },
-  back: { color: '#A1A1AA', fontWeight: '600' },
+  back: { color: T.muted, fontWeight: '600' },
   next: {
-    backgroundColor: '#E11D48',
+    backgroundColor: T.rose,
     borderRadius: 12,
     paddingHorizontal: 20,
     paddingVertical: 12,
