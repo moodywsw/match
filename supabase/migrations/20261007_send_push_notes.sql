@@ -1,0 +1,11 @@
+-- NOTES ONLY — not applied as a live trigger (avoids embedding service-role secrets).
+--
+-- Edge Function: send-push
+-- URL: https://pkpdheytmbwvqhpcaigm.supabase.co/functions/v1/send-push
+-- Auth: verify_jwt=true (user access token if matched, or service_role JWT)
+--
+-- Optional later (manual):
+--   1. create extension if not exists pg_net with schema extensions;
+--   2. Store project URL + service_role in supabase_vault (Dashboard / vault.create_secret)
+--   3. AFTER INSERT ON messages → net.http_post to send-push for the other participant
+-- Until then, the mobile client soft-invokes send-push after chat sends.

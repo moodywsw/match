@@ -20,6 +20,7 @@ import {
   subscribeToMessages,
   type ChatMessage,
 } from '@/lib/chat';
+import { notifyUserPush } from '@/lib/push';
 
 export default function ChatThreadScreen() {
   const { conversationId } = useLocalSearchParams<{ conversationId: string }>();
@@ -27,6 +28,7 @@ export default function ChatThreadScreen() {
   const router = useRouter();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [title, setTitle] = useState('Chat');
+  const [otherUserId, setOtherUserId] = useState<string | null>(null);
   const [text, setText] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -44,7 +46,10 @@ export default function ChatThreadScreen() {
           fetchMessages(conversationId),
         ]);
         if (cancelled) return;
-        if (meta) setTitle(meta.otherName);
+        if (meta) {
+          setTitle(meta.otherName);
+          setOtherUserId(meta.otherUserId);
+        }
         setMessages(msgs);
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load');
@@ -70,7 +75,16 @@ export default function ChatThreadScreen() {
     try {
       const msg = await sendMessage(conversationId, user.id, text);
       setMessages((prev) => (prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]));
+      const preview = text.trim();
       setText('');
+      if (otherUserId) {
+        void notifyUserPush({
+          userId: otherUserId,
+          title: 'New message',
+          body: preview.slice(0, 120),
+          data: { conversationId, type: 'chat_message' },
+        });
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Send failed');
     } finally {

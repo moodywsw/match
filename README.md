@@ -92,9 +92,39 @@ Nothing below invents credentials — you create them in Apple / Google / Expo d
 
 #### Push notifications
 
-- Client: `lib/notifications.ts` requests permission and upserts into `public.push_tokens`.  
-- Delivery still needs: valid `eas.projectId`, APNs (iOS), FCM (Android), plus a backend (Expo Push API or your Edge Function) that reads `push_tokens` and sends.  
-- Until `eas init`, registration logs `unavailable` with a clear detail — no crash.
+- Client: `lib/notifications.ts` requests permission and upserts into `public.push_tokens`.
+- Delivery: Edge Function **`send-push`** (`supabase/functions/send-push`) looks up tokens and POSTs to the [Expo Push API](https://docs.expo.dev/push-notifications/sending-notifications/) (no Expo account secret required for basic `ExponentPushToken[…]` sends).
+- `verify_jwt: true` — call with a user access token (must be matched with `user_id`) or the **service role** JWT for trusted server/webhook paths.
+- Chat already soft-invokes `send-push` after a successful message send.
+
+**Test (user JWT — after two matched users have tokens):**
+
+```bash
+# In apps/mobile, sign in, grant notifications (needs real EAS projectId for a token).
+# Then from a shell with the sender's access token:
+curl -s -X POST \
+  "https://pkpdheytmbwvqhpcaigm.supabase.co/functions/v1/send-push" \
+  -H "Authorization: Bearer $USER_ACCESS_TOKEN" \
+  -H "apikey: $SUPABASE_ANON_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"user_id":"<matched_recipient_uuid>","title":"Test","body":"Hello from send-push"}'
+```
+
+**Test / production invoke (service role — never commit this key):**
+
+```bash
+# Prefer Dashboard → Edge Functions → send-push → Invoke, or CI secrets:
+curl -s -X POST \
+  "https://pkpdheytmbwvqhpcaigm.supabase.co/functions/v1/send-push" \
+  -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+  -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"user_id":"<recipient_uuid>","title":"Match","body":"You have a new message"}'
+```
+
+Store the service role only in Supabase secrets / CI — never in the repo or client apps.
+
+**DB trigger via `pg_net`:** extension is available on the project but not required. Prefer invoking from the app or a trusted worker until you enable `pg_net` and store the service role in Vault. See `supabase/migrations/20261007_send_push_notes.sql` for a template (not auto-armed).
 
 #### IAP / RevenueCat (not enabled)
 
