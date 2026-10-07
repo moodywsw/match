@@ -1,16 +1,29 @@
-import React, { useState, useRef, useEffect, useMemo } from "react";
+import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import {
   Home, Search, Plus, Heart, MessageCircle, User, Bell, MapPin, Radio,
   Calendar, Settings, Shield, Crown, Zap, Play, Users, ThumbsUp, Send,
   Camera, Image as ImageIcon, X, Check, Star, Flame, Sparkles, ChevronLeft,
   ChevronRight, Music4, UtensilsCrossed, Plane, Clapperboard, Dumbbell,
   Moon, Sun, Lock, Eye, EyeOff, MoreHorizontal, Bookmark, Share2, Mic,
-  Wifi, BadgeCheck, ArrowLeft, RotateCcw, SlidersHorizontal
+  Wifi, BadgeCheck, ArrowLeft, RotateCcw, SlidersHorizontal, LogOut, Mail
 } from "lucide-react";
+import { supabase } from "./lib/supabase.js";
+import {
+  INTENTION_TO_DB,
+  INTENTION_FROM_DB,
+  ageFromBirthDate,
+  birthDateFromAge,
+  fetchOwnProfile,
+  upsertOwnProfile,
+  fetchDiscoverableProfiles,
+  fetchPrimaryPhotos,
+  sendLike,
+  fetchMyMatches,
+} from "./lib/profile.js";
 
 /* ----------------------------------------------------------------
    MATCH — a taste & personality-first dating / social prototype
-   Single-file React artifact. All data is local/mock.
+   React UI wired to Supabase Auth + profiles. Mock cards remain as empty-state fallback.
 ------------------------------------------------------------------- */
 
 /* ---------------------------- THEME ---------------------------- */
@@ -212,6 +225,70 @@ function clamp(n) { return Math.max(58, Math.min(99, n)); }
 
 const PROFILES = Array.from({ length: 20 }, (_, i) => makeProfile(i));
 
+
+function isUuid(id) {
+  return typeof id === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
+}
+
+function mapDbProfileToCard(row, photoUrl, index = 0) {
+  const age = ageFromBirthDate(row.birth_date) || 25;
+  const intention = INTENTION_FROM_DB[row.intention] || row.intention || INTENTIONS[index % INTENTIONS.length];
+  const photo = photoUrl || avatar(((index * 7) % 70) + 1);
+  const overall = 72 + ((index * 11) % 23);
+  return {
+    id: row.id,
+    name: row.name,
+    age,
+    city: row.city || "Nearby",
+    distance: 1 + (index % 14),
+    photo,
+    photos: [photo, photo, photo],
+    match: overall,
+    breakdown: {
+      Interests: overall,
+      Lifestyle: Math.min(99, overall + 2),
+      Personality: Math.max(58, overall - 3),
+      Music: overall,
+      Food: overall,
+      "Relationship goals": overall,
+      Location: Math.max(58, overall - 5),
+    },
+    tags: ["Taste match"],
+    bio: row.bio || "New on MATCH — say hi.",
+    intention,
+    why: ["You're both exploring MATCH", " overlapping taste signals", "Nearby and discoverable"],
+    diffs: ["Profiles are still filling out", "Chat to learn the rest"],
+    verified: !!row.verified,
+    online: false,
+    badges: ["New"],
+    fromDb: true,
+  };
+}
+
+function mapOwnProfileToUser(row, photoUrl, onboard = {}) {
+  if (!row) {
+    return {
+      ...DEMO_USER,
+      name: onboard.name || DEMO_USER.name,
+      intention: onboard.intention || DEMO_USER.intention,
+      tags: onboard.interests?.length ? onboard.interests.slice(0, 5) : DEMO_USER.tags,
+    };
+  }
+  return {
+    id: row.id,
+    name: row.name || onboard.name || DEMO_USER.name,
+    age: ageFromBirthDate(row.birth_date) || DEMO_USER.age,
+    city: row.city || DEMO_USER.city,
+    photo: photoUrl || DEMO_USER.photo,
+    tags: onboard.interests?.length ? onboard.interests.slice(0, 5) : DEMO_USER.tags,
+    intention: INTENTION_FROM_DB[row.intention] || onboard.intention || DEMO_USER.intention,
+    bio: row.bio || DEMO_USER.bio,
+    badges: DEMO_USER.badges,
+    verified: !!row.verified,
+    raw: row,
+  };
+}
+
 const DEMO_USER = {
   name: "Emma", age: 27, city: "Lisbon", photo: avatar(47),
   tags: ["House", "Sushi", "Travel", "Horror", "Gym"],
@@ -222,13 +299,152 @@ const DEMO_USER = {
 
 /* ---------------------------- APP ROOT --------------------------- */
 export default function MatchApp() {
-  const [stage, setStage] = useState("landing"); // landing | onboarding | building | app
-  const [onboard, setOnboard] = useState({ interests: [], intention: null, name: "" });
+  const [session, setSession] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [profile, setProfile] = useState(null);
+  const [profileReady, setProfileReady] = useState(false);
+  const [discovery, setDiscovery] = useState([]);
+  const [stage, setStage] = useState("landing"); // landing | auth | onboarding | building | app
+  const [onboard, setOnboard] = useState({ interests: [], intention: null, name: "", city: "Lisbon", birthAge: 25, bio: "" });
+  const [authError, setAuthError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const userId = session?.user?.id;
+
+  const loadProfileAndDiscovery = useCallback(async (uid) => {
+    if (!uid) {
+      setProfile(null);
+      setDiscovery([]);
+      setProfileReady(true);
+      return;
+    }
+    setProfileReady(false);
+    try {
+      const own = await fetchOwnProfile(uid);
+      setProfile(own);
+      const rows = await fetchDiscoverableProfiles(uid);
+      const photos = await fetchPrimaryPhotos(rows.map((r) => r.id));
+      setDiscovery(rows.map((r, i) => mapDbProfileToCard(r, photos[r.id], i)));
+      if (own?.onboarding_complete) {
+        setStage("app");
+      } else if (own) {
+        setOnboard((d) => ({
+          ...d,
+          name: own.name || d.name,
+          intention: INTENTION_FROM_DB[own.intention] || d.intention,
+          city: own.city || d.city,
+          bio: own.bio || d.bio,
+          birthAge: ageFromBirthDate(own.birth_date) || d.birthAge,
+        }));
+        setStage("onboarding");
+      } else {
+        setStage((s) => (s === "app" || s === "building" ? s : "onboarding"));
+      }
+    } catch (err) {
+      console.error(err);
+      setAuthError(err.message || "Failed to load profile");
+    } finally {
+      setProfileReady(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    supabase.auth.getSession().then(({ data }) => {
+      if (!mounted) return;
+      setSession(data.session);
+      setAuthReady(true);
+      if (data.session) {
+        setStage("building");
+        loadProfileAndDiscovery(data.session.user.id);
+      }
+    });
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, next) => {
+      setSession(next);
+      if (next?.user?.id) {
+        loadProfileAndDiscovery(next.user.id);
+      } else {
+        setProfile(null);
+        setDiscovery([]);
+        setStage("landing");
+        setProfileReady(true);
+      }
+    });
+    return () => {
+      mounted = false;
+      sub.subscription.unsubscribe();
+    };
+  }, [loadProfileAndDiscovery]);
 
   const goToApp = () => {
     setStage("building");
-    setTimeout(() => setStage("app"), 1400);
+    setTimeout(() => setStage("app"), 900);
   };
+
+  const persistOnboarding = async (data, { complete = true } = {}) => {
+    if (!userId) {
+      goToApp();
+      return;
+    }
+    setBusy(true);
+    setAuthError("");
+    try {
+      const intentionDb = INTENTION_TO_DB[data.intention] || "figuring_out";
+      const saved = await upsertOwnProfile(userId, {
+        name: (data.name || "Member").trim() || "Member",
+        birth_date: birthDateFromAge(data.birthAge || 25),
+        city: data.city || "Lisbon",
+        bio: data.bio || DEMO_USER.bio,
+        intention: intentionDb,
+        onboarding_complete: complete,
+        is_discoverable: true,
+      });
+      setProfile(saved);
+      await loadProfileAndDiscovery(userId);
+      goToApp();
+    } catch (err) {
+      console.error(err);
+      setAuthError(err.message || "Could not save profile");
+      // Still enter app so UI stays usable offline/empty
+      goToApp();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleAuth = async ({ mode, email, password }) => {
+    setBusy(true);
+    setAuthError("");
+    try {
+      if (mode === "signup") {
+        const { error } = await supabase.auth.signUp({ email, password });
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+      }
+      setStage("building");
+    } catch (err) {
+      setAuthError(err.message || "Authentication failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    setOnboard({ interests: [], intention: null, name: "", city: "Lisbon", birthAge: 25, bio: "" });
+    setStage("landing");
+  };
+
+  if (!authReady) {
+    return (
+      <div className="match-scope" style={{ ...bodyFont, minHeight: "100vh", background: T.ink, color: T.text, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <style>{FONTS + GLOBAL_CSS}</style>
+        <BuildingScreen name="" />
+      </div>
+    );
+  }
 
   return (
     <div
@@ -245,22 +461,120 @@ export default function MatchApp() {
     >
       <style>{FONTS + GLOBAL_CSS}</style>
       <div style={{ width: "100%", maxWidth: 460, position: "relative", minHeight: 700 }}>
-        {stage === "landing" && <Landing onEnter={() => setStage("onboarding")} />}
+        {stage === "landing" && (
+          <Landing
+            onEnter={() => setStage("auth")}
+            onDemo={() => {
+              setOnboard({ interests: DEMO_USER.tags, intention: DEMO_USER.intention, name: DEMO_USER.name, city: DEMO_USER.city, birthAge: DEMO_USER.age, bio: DEMO_USER.bio });
+              goToApp();
+            }}
+          />
+        )}
+        {stage === "auth" && (
+          <AuthScreen
+            busy={busy}
+            error={authError}
+            onBack={() => setStage("landing")}
+            onSubmit={handleAuth}
+          />
+        )}
         {stage === "onboarding" && (
           <Onboarding
             data={onboard}
             setData={setOnboard}
-            onFinish={goToApp}
-            onSkip={goToApp}
+            busy={busy}
+            onFinish={() => persistOnboarding(onboard, { complete: true })}
+            onSkip={() => persistOnboarding({ ...onboard, name: onboard.name || DEMO_USER.name, intention: onboard.intention || DEMO_USER.intention, bio: DEMO_USER.bio }, { complete: true })}
           />
         )}
-        {stage === "building" && <BuildingScreen name={onboard.name} />}
-        {stage === "app" && <MainApp onboard={onboard} />}
+        {stage === "building" && <BuildingScreen name={onboard.name || profile?.name} />}
+        {stage === "app" && profileReady && (
+          <MainApp
+            onboard={onboard}
+            profile={profile}
+            session={session}
+            discovery={discovery}
+            onSignOut={handleSignOut}
+            onRefreshDiscovery={() => userId && loadProfileAndDiscovery(userId)}
+          />
+        )}
+        {authError && stage !== "auth" && (
+          <div style={{ position: "absolute", bottom: 16, left: 16, right: 16, background: T.surface3, border: `1px solid ${T.border}`, borderRadius: 12, padding: "10px 12px", fontSize: 12, color: T.muted, zIndex: 80 }}>
+            {authError}
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
+function AuthScreen({ busy, error, onBack, onSubmit }) {
+  const [mode, setMode] = useState("signin");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPw, setShowPw] = useState(false);
+
+  return (
+    <div style={{ minHeight: 700, display: "flex", flexDirection: "column", padding: "28px 24px" }} className="fade-up">
+      <button onClick={onBack} style={{ ...ghostBtn, width: 44, marginBottom: 18 }} aria-label="Back">
+        <ArrowLeft size={18} />
+      </button>
+      <h2 style={{ ...displayFont, fontSize: 30, margin: "0 0 6px" }}>{mode === "signin" ? "Welcome back" : "Create account"}</h2>
+      <p style={{ color: T.muted, fontSize: 14, marginBottom: 22 }}>
+        {mode === "signin" ? "Sign in to sync your profile with Supabase." : "Sign up — your profile is stored securely in Supabase."}
+      </p>
+      <label style={{ fontSize: 12, color: T.mutedDim, marginBottom: 6 }}>Email</label>
+      <div style={{ position: "relative", marginBottom: 14 }}>
+        <Mail size={16} color={T.muted} style={{ position: "absolute", left: 14, top: 17 }} />
+        <input
+          type="email"
+          autoComplete="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="you@email.com"
+          style={{
+            width: "100%", padding: "16px 18px 16px 40px", borderRadius: 16, border: `1px solid ${T.border}`,
+            background: T.surface2, color: T.text, fontSize: 15, outline: "none", ...bodyFont
+          }}
+        />
+      </div>
+      <label style={{ fontSize: 12, color: T.mutedDim, marginBottom: 6 }}>Password</label>
+      <div style={{ position: "relative", marginBottom: 10 }}>
+        <Lock size={16} color={T.muted} style={{ position: "absolute", left: 14, top: 17 }} />
+        <input
+          type={showPw ? "text" : "password"}
+          autoComplete={mode === "signin" ? "current-password" : "new-password"}
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder="••••••••"
+          style={{
+            width: "100%", padding: "16px 44px 16px 40px", borderRadius: 16, border: `1px solid ${T.border}`,
+            background: T.surface2, color: T.text, fontSize: 15, outline: "none", ...bodyFont
+          }}
+        />
+        <button type="button" onClick={() => setShowPw((s) => !s)} style={{ position: "absolute", right: 10, top: 10, background: "none", border: "none", color: T.muted, cursor: "pointer", padding: 6 }}>
+          {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
+        </button>
+      </div>
+      {error && <p style={{ color: "#FF8A7A", fontSize: 13, margin: "4px 0 10px" }}>{error}</p>}
+      <button
+        disabled={busy || !email || password.length < 6}
+        onClick={() => onSubmit({ mode, email: email.trim(), password })}
+        style={{ ...primaryBtn, opacity: busy || !email || password.length < 6 ? 0.55 : 1, marginTop: 8 }}
+      >
+        {busy ? "Please wait…" : mode === "signin" ? "Sign in" : "Sign up"}
+      </button>
+      <button
+        onClick={() => setMode((m) => (m === "signin" ? "signup" : "signin"))}
+        style={{ background: "none", border: "none", color: T.muted, fontSize: 13, marginTop: 16, cursor: "pointer", ...bodyFont }}
+      >
+        {mode === "signin" ? "New here? Create an account" : "Already have an account? Sign in"}
+      </button>
+    </div>
+  );
+}
+
+/* ------------------------------ BUILDING SCREEN ------------------------------ */
 /* ------------------------------ BUILDING SCREEN ------------------------------ */
 function BuildingScreen({ name }) {
   const [step, setStep] = useState(0);
@@ -297,7 +611,7 @@ function BuildingScreen({ name }) {
 }
 
 
-function Landing({ onEnter }) {
+function Landing({ onEnter, onDemo }) {
   return (
     <div
       className="fade-up"
@@ -349,14 +663,24 @@ function Landing({ onEnter }) {
           background: `linear-gradient(90deg, ${T.rose}, #FF7A63)`, boxShadow: `0 12px 30px -8px ${T.rose}88`,
         }}
       >
-        Enter MATCH
+        Sign in / Sign up
+      </button>
+      <button
+        onClick={onDemo}
+        style={{
+          marginTop: 12, width: "100%", maxWidth: 280, padding: "12px 20px", borderRadius: 999,
+          border: `1px solid ${T.border}`, cursor: "pointer", ...bodyFont, fontWeight: 600, fontSize: 13.5,
+          color: T.muted, background: "transparent",
+        }}
+      >
+        Continue with demo UI
       </button>
     </div>
   );
 }
 
 /* ------------------------------ ONBOARDING ------------------------------ */
-function Onboarding({ data, setData, onFinish, onSkip }) {
+function Onboarding({ data, setData, onFinish, onSkip, busy }) {
   const [step, setStep] = useState(0);
   const steps = ["name", "intention", "interests", "personality"];
   const total = steps.length;
@@ -395,11 +719,34 @@ function Onboarding({ data, setData, onFinish, onSkip }) {
               placeholder="Your first name"
               style={{
                 width: "100%", padding: "16px 18px", borderRadius: 16, border: `1px solid ${T.border}`,
-                background: T.surface2, color: T.text, fontSize: 16, outline: "none", ...bodyFont
+                background: T.surface2, color: T.text, fontSize: 16, outline: "none", ...bodyFont, marginBottom: 12
               }}
             />
+            <div style={{ display: "flex", gap: 10 }}>
+              <input
+                type="number"
+                min={18}
+                max={99}
+                value={data.birthAge || 25}
+                onChange={(e) => setData((d) => ({ ...d, birthAge: Number(e.target.value) || 25 }))}
+                placeholder="Age"
+                style={{
+                  width: "35%", padding: "16px 18px", borderRadius: 16, border: `1px solid ${T.border}`,
+                  background: T.surface2, color: T.text, fontSize: 16, outline: "none", ...bodyFont
+                }}
+              />
+              <input
+                value={data.city || ""}
+                onChange={(e) => setData((d) => ({ ...d, city: e.target.value }))}
+                placeholder="City"
+                style={{
+                  flex: 1, padding: "16px 18px", borderRadius: 16, border: `1px solid ${T.border}`,
+                  background: T.surface2, color: T.text, fontSize: 16, outline: "none", ...bodyFont
+                }}
+              />
+            </div>
             <p style={{ color: T.mutedDim, fontSize: 12, marginTop: 22 }}>
-              Age verification, gender and location are collected in the full sign-up. This preview skips straight to the good part.
+              Saved to your Supabase profile (birth date is derived from age; exact DOB stays private via RLS).
             </p>
           </div>
         )}
@@ -484,10 +831,11 @@ function Onboarding({ data, setData, onFinish, onSkip }) {
           </button>
         )}
         <button
+          disabled={busy}
           onClick={() => (step === total - 1 ? onFinish() : setStep((s) => s + 1))}
-          style={{ ...primaryBtn, flex: 1 }}
+          style={{ ...primaryBtn, flex: 1, opacity: busy ? 0.6 : 1 }}
         >
-          {step === total - 1 ? "Build my profile" : "Continue"}
+          {busy ? "Saving…" : step === total - 1 ? "Build my profile" : "Continue"}
         </button>
       </div>
       <button onClick={onSkip} style={{ background: "none", border: "none", color: T.mutedDim, fontSize: 13, marginTop: 14, cursor: "pointer", ...bodyFont }}>
@@ -599,7 +947,7 @@ function LitMatch({ size = 30 }) {
 }
 
 
-function MainApp({ onboard }) {
+function MainApp({ onboard, profile, session, discovery, onSignOut, onRefreshDiscovery }) {
   const [history, setHistory] = useState(["home"]);
   const tab = history[history.length - 1];
   const navigate = (t) => setHistory((h) => (h[h.length - 1] === t ? h : [...h, t]));
@@ -610,29 +958,104 @@ function MainApp({ onboard }) {
   const [premiumOpen, setPremiumOpen] = useState(false);
   const [matchOverlay, setMatchOverlay] = useState(null);
   const [likedIds, setLikedIds] = useState([]);
-  const [matchedIds, setMatchedIds] = useState([3, 7, 12]);
+  const [matchedIds, setMatchedIds] = useState([]);
+  const [matchedProfiles, setMatchedProfiles] = useState([]);
   const [toast, setToast] = useState(null);
+  const [savingBio, setSavingBio] = useState(false);
 
-  const user = { ...DEMO_USER, name: onboard.name || DEMO_USER.name, intention: onboard.intention || DEMO_USER.intention };
+  const deckProfiles = discovery.length > 0 ? discovery : PROFILES;
+  const user = mapOwnProfileToUser(profile, null, onboard);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!session?.user?.id) {
+        setMatchedIds([3, 7, 12]);
+        setMatchedProfiles(PROFILES.filter((p) => [3, 7, 12].includes(p.id)));
+        return;
+      }
+      try {
+        const rows = await fetchMyMatches(session.user.id);
+        if (cancelled) return;
+        const otherIds = rows.map((m) => (m.user_a === session.user.id ? m.user_b : m.user_a));
+        setMatchedIds(otherIds);
+        const fromDiscovery = deckProfiles.filter((p) => otherIds.includes(p.id));
+        if (fromDiscovery.length) {
+          setMatchedProfiles(fromDiscovery);
+        } else if (otherIds.length) {
+          const photos = await fetchPrimaryPhotos(otherIds);
+          const { data } = await supabase.from("profiles").select("id, name, birth_date, city, bio, intention, verified").in("id", otherIds);
+          setMatchedProfiles((data || []).map((r, i) => mapDbProfileToCard(r, photos[r.id], i)));
+        } else {
+          setMatchedProfiles([]);
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [session?.user?.id, discovery]);
 
   const showToast = (msg) => {
     setToast(msg);
     setTimeout(() => setToast(null), 2200);
   };
 
-  const handleLike = (profile) => {
-    setLikedIds((l) => [...l, profile.id]);
+  const handleLike = async (card) => {
+    setLikedIds((l) => [...l, card.id]);
+    if (session?.user?.id && isUuid(card.id)) {
+      try {
+        const { match } = await sendLike(session.user.id, card.id);
+        if (match) {
+          setMatchedIds((m) => [...new Set([...m, card.id])]);
+          setMatchedProfiles((list) => (list.some((p) => p.id === card.id) ? list : [...list, card]));
+          setMatchOverlay(card);
+        } else {
+          showToast(`Like sent to ${card.name} 💫`);
+        }
+        onRefreshDiscovery && onRefreshDiscovery();
+      } catch (err) {
+        console.error(err);
+        showToast(err.message || "Could not send like");
+      }
+      return;
+    }
     const isMatch = Math.random() > 0.35;
     if (isMatch) {
-      setMatchedIds((m) => [...new Set([...m, profile.id])]);
-      setMatchOverlay(profile);
+      setMatchedIds((m) => [...new Set([...m, card.id])]);
+      setMatchedProfiles((list) => (list.some((p) => p.id === card.id) ? list : [...list, card]));
+      setMatchOverlay(card);
     } else {
-      showToast(`Like sent to ${profile.name} 💫`);
+      showToast(`Like sent to ${card.name} 💫`);
     }
   };
 
-  const matchedProfiles = PROFILES.filter((p) => matchedIds.includes(p.id));
-  const activeChat = PROFILES.find((p) => p.id === chatId);
+  const handleSaveProfile = async (patch) => {
+    if (!session?.user?.id) {
+      showToast("Sign in to save your profile");
+      return;
+    }
+    setSavingBio(true);
+    try {
+      const saved = await upsertOwnProfile(session.user.id, {
+        name: patch.name || user.name,
+        bio: patch.bio ?? user.bio,
+        city: patch.city || user.city,
+        intention: INTENTION_TO_DB[patch.intention || user.intention] || profile?.intention || "figuring_out",
+        birth_date: profile?.birth_date || birthDateFromAge(user.age),
+        onboarding_complete: true,
+      });
+      showToast("Profile saved ✓");
+      onRefreshDiscovery && onRefreshDiscovery();
+      return saved;
+    } catch (err) {
+      showToast(err.message || "Save failed");
+    } finally {
+      setSavingBio(false);
+    }
+  };
+
+  const activeChat = matchedProfiles.find((p) => p.id === chatId) || deckProfiles.find((p) => p.id === chatId);
 
   return (
     <div style={{ minHeight: 700, position: "relative", paddingBottom: 84 }}>
@@ -654,9 +1077,17 @@ function MainApp({ onboard }) {
             onOpenProfileTab={() => navigate("discover")}
             onOpenLive={(room) => setLiveRoom(room)}
             onOpenEvents={() => navigate("events")}
+            deckProfiles={deckProfiles}
           />
         )}
-        {tab === "discover" && <DiscoverTab onLike={handleLike} onPass={() => {}} />}
+        {tab === "discover" && (
+          <DiscoverTab
+            onLike={handleLike}
+            onPass={() => {}}
+            profiles={deckProfiles}
+            usingLiveData={discovery.length > 0}
+          />
+        )}
         {tab === "matches" && (
           <MatchesTab
             profiles={matchedProfiles}
@@ -676,7 +1107,16 @@ function MainApp({ onboard }) {
         {tab === "live" && <LiveTab onOpen={setLiveRoom} />}
         {tab === "events" && <EventsTab showToast={showToast} />}
         {tab === "profile" && (
-          <ProfileTab user={user} onPremium={() => setPremiumOpen(true)} onOpenSocial={() => navigate("social")} showToast={showToast} />
+          <ProfileTab
+            user={user}
+            onPremium={() => setPremiumOpen(true)}
+            onOpenSocial={() => navigate("social")}
+            showToast={showToast}
+            onSignOut={onSignOut}
+            onSaveProfile={handleSaveProfile}
+            saving={savingBio}
+            signedIn={!!session}
+          />
         )}
       </div>
 
@@ -859,9 +1299,10 @@ function MatchRing({ percent, size = 56, stroke = 5 }) {
 }
 
 /* ------------------------------ HOME TAB ------------------------------ */
-function HomeTab({ user, onLike, onOpenChat, onOpenLive, onOpenEvents }) {
-  const top = useMemo(() => [...PROFILES].sort((a, b) => b.match - a.match).slice(0, 3), []);
-  const trending = useMemo(() => [...PROFILES].sort(() => 0.5 - Math.random()).slice(0, 6), []);
+function HomeTab({ user, onLike, onOpenChat, onOpenLive, onOpenEvents, onOpenProfileTab, deckProfiles }) {
+  const pool = deckProfiles?.length ? deckProfiles : PROFILES;
+  const top = useMemo(() => [...pool].sort((a, b) => b.match - a.match).slice(0, 3), [pool]);
+  const trending = useMemo(() => [...pool].sort(() => 0.5 - Math.random()).slice(0, 6), [pool]);
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
 
@@ -972,10 +1413,12 @@ function SectionTitle({ title, sub, action, onAction }) {
 /* ------------------------------ DISCOVER TAB ------------------------------ */
 const DISCOVERY_MODES = ["Recommended", "Near You", "Similar Taste", "Opposites Attract", "New Users", "Trending", "Events"];
 
-function DiscoverTab({ onLike, onPass }) {
+function DiscoverTab({ onLike, onPass, profiles: liveProfiles, usingLiveData }) {
   const [mode, setMode] = useState("Recommended");
   const [view, setView] = useState("cards");
-  const [deck, setDeck] = useState(() => [...PROFILES].sort(() => 0.5 - Math.random()));
+  const source = (liveProfiles && liveProfiles.length ? liveProfiles : PROFILES);
+  const [deck, setDeck] = useState(() => [...source].sort(() => 0.5 - Math.random()));
+  useEffect(() => { setDeck([...source].sort(() => 0.5 - Math.random())); }, [liveProfiles]);
   const [drag, setDrag] = useState({ x: 0, active: false });
   const [showDetail, setShowDetail] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
@@ -1012,9 +1455,12 @@ function DiscoverTab({ onLike, onPass }) {
 
   return (
     <div className="fade-up" style={{ paddingTop: 14 }}>
+      <p style={{ fontSize: 11.5, color: T.mutedDim, margin: "0 0 10px", ...monoFont }}>
+        {usingLiveData ? "LIVE · profiles from Supabase" : "DEMO · mock cards (no discoverable profiles yet)"}
+      </p>
       <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 10 }} className="no-scrollbar">
         {DISCOVERY_MODES.map((m) => (
-          <button key={m} onClick={() => { setMode(m); setDeck(applyFilters([...PROFILES].sort(() => 0.5 - Math.random()), filters)); }} style={{
+          <button key={m} onClick={() => { setMode(m); setDeck(applyFilters([...source].sort(() => 0.5 - Math.random()), filters)); }} style={{
             padding: "8px 14px", borderRadius: 999, whiteSpace: "nowrap", fontSize: 12.5, cursor: "pointer",
             border: `1px solid ${mode === m ? T.rose : T.border}`,
             background: mode === m ? `${T.rose}22` : T.surface2, color: mode === m ? "#fff" : T.muted, fontWeight: 600
@@ -1033,7 +1479,7 @@ function DiscoverTab({ onLike, onPass }) {
       </div>
 
       {view === "map" ? (
-        <MapView profiles={PROFILES} onLike={onLike} />
+        <MapView profiles={source} onLike={onLike} />
       ) : (
       <>
       <div style={{ position: "relative", height: 500, marginTop: 6 }}>
@@ -1044,7 +1490,7 @@ function DiscoverTab({ onLike, onPass }) {
           }}>
             <RotateCcw size={26} />
             <p>You've seen everyone for now.</p>
-            <button onClick={() => setDeck(applyFilters([...PROFILES].sort(() => 0.5 - Math.random()), filters))} style={{ ...primaryBtn, padding: "10px 18px" }}>Refresh deck</button>
+            <button onClick={() => setDeck(applyFilters([...source].sort(() => 0.5 - Math.random()), filters))} style={{ ...primaryBtn, padding: "10px 18px" }}>Refresh deck</button>
           </div>
         )}
         {deck.slice(0, 3).reverse().map((p, idx, arr) => {
@@ -1131,7 +1577,7 @@ function DiscoverTab({ onLike, onPass }) {
           onClose={() => setShowFilters(false)}
           onApply={(f) => {
             setFilters(f);
-            setDeck(applyFilters([...PROFILES].sort(() => 0.5 - Math.random()), f));
+            setDeck(applyFilters([...source].sort(() => 0.5 - Math.random()), f));
             setShowFilters(false);
           }}
         />
@@ -2318,7 +2764,7 @@ function EventsTab({ showToast }) {
 }
 
 /* ------------------------------ PROFILE TAB ------------------------------ */
-function ProfileTab({ user, onPremium, onOpenSocial, showToast }) {
+function ProfileTab({ user, onPremium, onOpenSocial, showToast, onSignOut, onSaveProfile, saving, signedIn }) {
   const [visibility, setVisibility] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
   const [verified, setVerified] = useState(false);
@@ -2335,7 +2781,7 @@ function ProfileTab({ user, onPremium, onOpenSocial, showToast }) {
           )}
         </div>
         <h2 style={{ ...displayFont, fontSize: 22, margin: "10px 0 2px", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-          {user.name}, {DEMO_USER.age}
+          {user.name}, {user.age}
         </h2>
         <p style={{ color: T.muted, fontSize: 13, margin: 0 }}>{user.city} · {user.intention}</p>
         <p style={{ color: T.mutedDim, fontSize: 12.5, marginTop: 8, fontStyle: "italic" }}>"{user.bio}"</p>
@@ -2391,13 +2837,35 @@ function ProfileTab({ user, onPremium, onOpenSocial, showToast }) {
         <ChevronRight size={16} />
       </button>
 
+      <button
+        disabled={saving || !signedIn}
+        onClick={() => onSaveProfile && onSaveProfile({ name: user.name, bio: user.bio, city: user.city, intention: user.intention })}
+        style={{
+          width: "100%", padding: "14px", borderRadius: 18, border: "none",
+          background: `linear-gradient(90deg, ${T.rose}, #FF7A63)`, color: "#fff",
+          cursor: signedIn ? "pointer" : "not-allowed", marginBottom: 10, opacity: saving || !signedIn ? 0.55 : 1,
+          fontWeight: 700, fontSize: 13.5, ...bodyFont
+        }}
+      >
+        {signedIn ? (saving ? "Saving…" : "Save profile to Supabase") : "Sign in to sync profile"}
+      </button>
+
       <button onClick={() => setShowSettings(true)} style={{
         width: "100%", padding: "14px", borderRadius: 18, border: `1px solid ${T.border}`, background: T.surface,
-        color: T.text, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between"
+        color: T.text, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10
       }}>
         <span style={{ fontSize: 13.5, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}><Settings size={16} /> Settings & privacy</span>
         <ChevronRight size={16} />
       </button>
+
+      {onSignOut && (
+        <button onClick={onSignOut} style={{
+          width: "100%", padding: "14px", borderRadius: 18, border: `1px solid ${T.border}`, background: T.surface,
+          color: T.muted, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8
+        }}>
+          <LogOut size={16} /> Sign out
+        </button>
+      )}
 
       {showSettings && (
         <SettingsSheet
