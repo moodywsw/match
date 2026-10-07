@@ -1,14 +1,12 @@
 import type { ConfigContext, ExpoConfig } from 'expo/config';
 
-/**
- * Dynamic Expo config. EAS projectId comes from env after `eas init`,
- * or stays as the explicit placeholder until then.
- */
+const PROJECT_ID = 'ec207fec-1ece-43a1-b5ef-d4383bc933f3';
+
 export default ({ config }: ConfigContext): ExpoConfig => {
   const easProjectId =
     process.env.EAS_PROJECT_ID ||
     process.env.EXPO_PUBLIC_EAS_PROJECT_ID ||
-    'replace-after-eas-init';
+    PROJECT_ID;
 
   return {
     ...config,
@@ -19,6 +17,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     icon: './assets/images/icon.png',
     scheme: 'match',
     userInterfaceStyle: 'automatic',
+    owner: process.env.EXPO_OWNER || 'moidys-team',
     ios: {
       supportsTablet: true,
       bundleIdentifier: 'com.match.app',
@@ -77,6 +76,5 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       },
       router: {},
     },
-    owner: process.env.EXPO_OWNER || undefined,
   };
 };
