@@ -1,7 +1,24 @@
+# secrets
 .env
 .env.local
 .env.*.local
+**/.env
+!**/.env.example
+
+# deps & build
 node_modules/
 dist/
+.expo/
+web-build/
+*.tsbuildinfo
+expo-env.d.ts
+
+# native (EAS local)
+apps/mobile/ios/
+apps/mobile/android/
+apps/mobile/.kotlin/
+
+# OS / logs
 .DS_Store
 *.log
+npm-debug.*

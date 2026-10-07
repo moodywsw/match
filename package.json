@@ -2,20 +2,14 @@
   "name": "match",
   "private": true,
   "version": "0.1.0",
-  "type": "module",
+  "description": "Match — Expo mobile + Vite web prototype, Supabase backend",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
-  },
-  "dependencies": {
-    "@supabase/supabase-js": "^2.49.8",
-    "lucide-react": "^0.475.0",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1"
-  },
-  "devDependencies": {
-    "@vitejs/plugin-react": "^4.3.4",
-    "vite": "^6.0.11"
+    "mobile": "npm --prefix apps/mobile start",
+    "mobile:web": "npm --prefix apps/mobile run web",
+    "mobile:android": "npm --prefix apps/mobile run android",
+    "mobile:ios": "npm --prefix apps/mobile run ios",
+    "mobile:doctor": "npm --prefix apps/mobile run doctor",
+    "web": "npm --prefix apps/web run dev",
+    "web:build": "npm --prefix apps/web run build"
   }
 }
