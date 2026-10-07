@@ -4,10 +4,12 @@ import React, {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
 
+import { registerForPushNotifications } from '@/lib/notifications';
 import { ensureProfileStub, type Profile } from '@/lib/profile';
 import { supabase } from '@/lib/supabase';
 
@@ -28,6 +30,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
+  const pushAttempted = useRef<string | null>(null);
 
   const loadProfile = useCallback(async (user: User) => {
     try {
@@ -60,6 +63,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         loadProfile(next.user);
       } else {
         setProfile(null);
+        pushAttempted.current = null;
       }
     });
 
@@ -68,6 +72,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       sub.subscription.unsubscribe();
     };
   }, [loadProfile]);
+
+  // Best-effort push permission + token capture after session is ready
+  useEffect(() => {
+    const uid = session?.user?.id;
+    if (!uid || pushAttempted.current === uid) return;
+    pushAttempted.current = uid;
+    registerForPushNotifications(uid).then((result) => {
+      if (result.status !== 'registered') {
+        console.info('[match] push registration:', result.status, result.detail ?? '');
+      }
+    });
+  }, [session?.user?.id]);
 
   const refreshProfile = useCallback(async () => {
     if (!session?.user) return;
@@ -95,6 +111,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = useCallback(async () => {
     await supabase.auth.signOut();
     setProfile(null);
+    pushAttempted.current = null;
   }, []);
 
   const value = useMemo<AuthContextValue>(

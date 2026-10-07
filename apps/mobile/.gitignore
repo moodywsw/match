@@ -43,3 +43,10 @@ yarn-error.*
 # secrets
 .env
 .env.local
+
+google-service-account.json
+*.p8
+*.jks
+
+google-services.json
+google-service-account.json

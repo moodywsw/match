@@ -22,3 +22,7 @@ apps/mobile/.kotlin/
 .DS_Store
 *.log
 npm-debug.*
+
+google-service-account.json
+google-services.json
+*.p8
