@@ -11,10 +11,6 @@ if (!url || !anonKey) {
   );
 }
 
-/**
- * SecureStore has a ~2KB value limit. Large session blobs use a chunked
- * web-storage-compatible adapter; for typical email/password JWTs one item is enough.
- */
 const ExpoSecureStoreAdapter = {
   getItem: (key: string) => {
     if (Platform.OS === 'web') {
@@ -31,7 +27,7 @@ const ExpoSecureStoreAdapter = {
       try {
         localStorage.setItem(key, value);
       } catch {
-        /* ignore quota / private mode */
+        /* ignore */
       }
       return Promise.resolve();
     }
