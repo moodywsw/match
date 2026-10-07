@@ -41,9 +41,10 @@ Env vars (never commit real keys — `.env` is gitignored):
 - Supabase JS client with **SecureStore** session persistence (localStorage on web)
 - Email/password **sign-up / sign-in**
 - Auth gate → tabs: **Discover**, **Feed**, **Chat**, **Profile**
-- Profile bootstrap: upserts `public.profiles` on first login; Profile tab can save name/city/bio
+- Profile bootstrap: upserts `public.profiles` on first login; Profile tab saves name/city/bio and marks `onboarding_complete` + `is_discoverable`
+- **Discover**: loads live `profiles` (+ `photos`), swipe/like inserts `likes`, match overlay if a row appears in `matches` (DB trigger only). Empty DB → labeled DEMO cards (likes not saved).
 
-Still placeholders: Discover cards, Feed, Chat (real-time later).
+Still placeholders: Feed, Chat (real-time later).
 
 ### Expo Go
 

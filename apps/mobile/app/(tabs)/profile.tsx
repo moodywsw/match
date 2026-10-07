@@ -39,6 +39,8 @@ export default function ProfileScreen() {
         birth_date: profile?.birth_date,
         city: city.trim() || null,
         bio: bio.trim() || null,
+        onboarding_complete: true,
+        is_discoverable: true,
       });
       await refreshProfile();
       setMessage('Profile saved to Supabase.');
