@@ -14,7 +14,10 @@ import { createClient } from "@supabase/supabase-js";
  *   LIVEKIT_API_KEY, LIVEKIT_API_SECRET, LIVEKIT_URL (wss://<project>.livekit.cloud)
  * If any is missing the function answers 503 `livekit_not_configured`.
  *
- * Request:  POST { "stream_id": "<uuid>" }
+ * Request:  POST { "stream_id": "<uuid>" }   — live room
+ *       or  POST { "call_id": "<uuid>" }     — 1:1 call between two matches
+ *           (`public.get_call_token_grant`: only the caller/callee, never when
+ *           blocked, only while ringing (caller) or accepted → 410 call_ended)
  * Response: { token, url, room, identity, canPublish, expiresAt }
  */
 
@@ -71,13 +74,18 @@ Deno.serve(async (req: Request) => {
   if (!authHeader?.startsWith("Bearer ")) return json({ error: "unauthorized" }, 401);
 
   let streamId: unknown;
+  let callId: unknown;
   try {
     const body = await req.json();
     streamId = body?.stream_id;
+    callId = body?.call_id;
   } catch {
     return json({ error: "invalid_json" }, 400);
   }
-  if (typeof streamId !== "string" || !UUID_RE.test(streamId)) {
+  const isCall = callId !== undefined && callId !== null;
+  if (isCall) {
+    if (typeof callId !== "string" || !UUID_RE.test(callId)) return json({ error: "invalid_call_id" }, 400);
+  } else if (typeof streamId !== "string" || !UUID_RE.test(streamId)) {
     return json({ error: "invalid_stream_id" }, 400);
   }
 
@@ -90,13 +98,17 @@ Deno.serve(async (req: Request) => {
   const { data: userData, error: userErr } = await supabase.auth.getUser();
   if (userErr || !userData?.user) return json({ error: "unauthorized" }, 401);
 
-  const { data, error } = await supabase.rpc("get_live_token_grant", { p_stream_id: streamId });
+  const { data, error } = isCall
+    ? await supabase.rpc("get_call_token_grant", { p_call_id: callId })
+    : await supabase.rpc("get_live_token_grant", { p_stream_id: streamId });
   if (error) {
     const msg = error.message ?? "";
     if (msg.includes("stream_ended")) return json({ error: "stream_ended" }, 410);
+    if (msg.includes("call_ended")) return json({ error: "call_ended" }, 410);
+    if (msg.includes("rate_limited")) return json({ error: "rate_limited" }, 429);
     if (msg.includes("not_allowed")) return json({ error: "not_allowed" }, 403);
     if (msg.includes("not_authenticated")) return json({ error: "unauthorized" }, 401);
-    console.error("get_live_token_grant failed", error);
+    console.error(isCall ? "get_call_token_grant failed" : "get_live_token_grant failed", error);
     return json({ error: "grant_failed" }, 500);
   }
   const grant = Array.isArray(data) ? data[0] : data;
@@ -105,8 +117,9 @@ Deno.serve(async (req: Request) => {
   }
 
   const now = Math.floor(Date.now() / 1000);
-  const exp = now + TOKEN_TTL_SECONDS;
+  const exp = now + (isCall ? 4 * 60 * 60 : TOKEN_TTL_SECONDS);
   const canPublish = grant.can_publish === true;
+  const sources = !canPublish ? [] : isCall && grant.kind === "audio" ? ["microphone"] : ["camera", "microphone"];
   const token = await signHs256({
     iss: apiKey,
     sub: grant.identity,
@@ -121,7 +134,7 @@ Deno.serve(async (req: Request) => {
       canPublish,
       canSubscribe: true,
       canPublishData: true,
-      canPublishSources: canPublish ? ["camera", "microphone"] : [],
+      canPublishSources: sources,
     },
   }, apiSecret);
 
@@ -131,6 +144,7 @@ Deno.serve(async (req: Request) => {
     room: grant.room,
     identity: grant.identity,
     canPublish,
+    kind: isCall ? grant.kind : undefined,
     expiresAt: new Date(exp * 1000).toISOString(),
   });
 });

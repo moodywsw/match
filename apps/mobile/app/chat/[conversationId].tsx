@@ -1,7 +1,7 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import { ArrowLeft, Check, CheckCheck, Image as ImageIcon, Mic, MoreHorizontal, Send } from 'lucide-react-native';
+import { ArrowLeft, Check, CheckCheck, Image as ImageIcon, Mic, MoreHorizontal, Phone, PhoneMissed, Send, Video } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, AppState, Easing, FlatList, Image, KeyboardAvoidingView, Platform, Pressable, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -13,6 +13,8 @@ import { Txt } from '@/components/ui/Txt';
 import { T, body } from '@/constants/theme';
 import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
+import { useCalls } from '@/contexts/CallContext';
+import { callDurationLabel, type CallKind } from '@/lib/calls';
 import { fetchConversationMeta, fetchMessages, joinTypingChannel, markConversationRead, sendMediaMessage, sendMessage, subscribeToMessages, type ChatMessage } from '@/lib/chat';
 import { computeCompat } from '@/lib/compat';
 import { fetchInterestLabelsForUsers } from '@/lib/interests';
@@ -24,7 +26,7 @@ import { friendlyError } from '@/lib/errors';
 type Msg = {
   id: string;
   mine: boolean;
-  type: 'text' | 'image' | 'voice';
+  type: 'text' | 'image' | 'voice' | 'call';
   text?: string | null;
   /** demo image URL or local file while uploading */
   image?: string | null;
@@ -89,7 +91,53 @@ function Receipt({ m }: { m: Msg }) {
   );
 }
 
-function MessageRow({ m }: { m: Msg }) {
+/** Centred call summary pill ("Missed video call", "Voice call · 3:12"). Tap to call back. */
+function CallPill({ m, onCall }: { m: Msg; onCall?: (kind: CallKind) => void }) {
+  const [status, k] = (m.text ?? 'ended:video').split(':');
+  const kind: CallKind = k === 'audio' ? 'audio' : 'video';
+  const Kind = kind === 'video' ? 'Video call' : 'Voice call';
+  const missedForMe = !m.mine && status === 'missed';
+  const label =
+    status === 'ended'
+      ? `${Kind} · ${callDurationLabel(m.durationMs)}`
+      : status === 'missed'
+        ? m.mine
+          ? `${Kind} · No answer`
+          : `Missed ${kind === 'video' ? 'video' : 'voice'} call`
+        : `${Kind} · Declined`;
+  const color = missedForMe ? T.rose : T.muted;
+  const Icon = missedForMe ? PhoneMissed : kind === 'video' ? Video : Phone;
+  return (
+    <Pressable
+      onPress={() => onCall?.(kind)}
+      accessibilityRole="button"
+      accessibilityLabel={`${label}. Tap to call back`}
+      style={({ pressed }) => ({
+        alignSelf: 'center',
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 7,
+        paddingVertical: 7,
+        paddingHorizontal: 13,
+        borderRadius: 999,
+        borderWidth: 1,
+        borderColor: missedForMe ? `${T.rose}55` : T.border,
+        backgroundColor: T.surface2,
+        opacity: pressed ? 0.75 : 1,
+      })}>
+      <Icon size={13} color={color} />
+      <Txt size={12} color={missedForMe ? T.rose : T.text} w={600}>
+        {label}
+      </Txt>
+      <Txt v="mono" size={10} color={T.mutedDim}>
+        {fmtTime(m.at)}
+      </Txt>
+    </Pressable>
+  );
+}
+
+function MessageRow({ m, onCall }: { m: Msg; onCall?: (kind: CallKind) => void }) {
+  if (m.type === 'call') return <CallPill m={m} onCall={onCall} />;
   return (
     <View>
       <Bubble m={m} />
@@ -130,6 +178,7 @@ export default function ChatScreen() {
   const insets = useSafeAreaInsets();
   const { user, profile } = useAuth();
   const { me, toast, removePerson, clearInboxFor } = useApp();
+  const { placeCall } = useCalls();
   const [peer, setPeer] = useState<Peer | null>(null);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
@@ -170,7 +219,7 @@ export default function ChatScreen() {
     (m: ChatMessage): Msg => ({
       id: m.id,
       mine: m.sender_id === user?.id,
-      type: m.type === 'image' || m.type === 'voice' ? m.type : 'text',
+      type: m.type === 'image' || m.type === 'voice' || m.type === 'call' ? m.type : 'text',
       text: m.content,
       mediaPath: m.media_path ?? null,
       durationMs: m.duration_ms ?? null,
@@ -371,6 +420,15 @@ export default function ChatScreen() {
     []
   );
 
+  const call = useCallback(
+    (kind: CallKind) => {
+      if (isDemo) return toast('Calls work with your real matches');
+      if (!peer || !conversationId) return;
+      void placeCall(conversationId, { id: peer.id, name: peer.name, photo: peer.photo }, kind);
+    },
+    [isDemo, peer, conversationId, placeCall, toast]
+  );
+
   const header = useMemo(
     () => (
       <View style={{ paddingHorizontal: 4 }}>
@@ -422,6 +480,16 @@ export default function ChatScreen() {
             </View>
           ) : null}
           {!isDemo ? (
+            <>
+              <IconBtn size={32} label="Voice call" onPress={() => call('audio')}>
+                <Phone size={15} color={T.text} />
+              </IconBtn>
+              <IconBtn size={32} label="Video call" onPress={() => call('video')}>
+                <Video size={16} color={T.text} />
+              </IconBtn>
+            </>
+          ) : null}
+          {!isDemo ? (
             <IconBtn size={32} onPress={() => setSafetyOpen(true)}>
               <MoreHorizontal size={16} color={T.text} />
             </IconBtn>
@@ -434,7 +502,7 @@ export default function ChatScreen() {
           keyExtractor={(m) => m.id}
           ListHeaderComponent={header}
           contentContainerStyle={{ paddingVertical: 6, paddingHorizontal: 4, gap: 8 }}
-          renderItem={({ item }) => <MessageRow m={item} />}
+          renderItem={({ item }) => <MessageRow m={item} onCall={call} />}
           ListFooterComponent={typing ? <TypingDots /> : null}
           ListEmptyComponent={
             <Txt size={13} color={T.mutedDim} center style={{ marginTop: 30 }}>

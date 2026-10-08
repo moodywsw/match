@@ -160,3 +160,29 @@ describe('live rooms (Expo Go runtime)', () => {
     expect(errors).toEqual([]);
   });
 });
+
+describe('calls (Expo Go runtime)', () => {
+  beforeEach(() => {
+    state.signedIn = true;
+    state.onboarded = true;
+  });
+
+  test('video call button shows the installed-app state instead of crashing', async () => {
+    const view = await open('/chat/00000000-0000-4000-8000-000000000002');
+    for (let i = 0; i < 6; i++) {
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(50);
+      });
+    }
+    expect(view.getByText('Missed video call')).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(view.getByLabelText('Video call'));
+    });
+    expect(view.getByText('Video calls work in the installed app')).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(view.getByText('Got it'));
+    });
+    expect(view.queryByText('Video calls work in the installed app')).toBeNull();
+    expect(errors).toEqual([]);
+  });
+});

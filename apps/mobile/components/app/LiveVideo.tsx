@@ -13,13 +13,13 @@ import { fetchLiveKitToken } from '@/lib/live';
 
 type LiveKitRN = typeof import('@livekit/react-native');
 type LiveKitClient = typeof import('livekit-client');
-type LK = { rn: LiveKitRN; client: LiveKitClient };
+export type LK = { rn: LiveKitRN; client: LiveKitClient };
 
 export const IS_EXPO_GO = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
 
 let cached: LK | null | undefined;
 
-function loadLiveKit(): LK | null {
+export function loadLiveKit(): LK | null {
   if (cached !== undefined) return cached;
   if (IS_EXPO_GO || Platform.OS === 'web' || !NativeModules.WebRTCModule) {
     cached = null;

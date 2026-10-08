@@ -11,7 +11,8 @@ import { ensureConversation } from './chat';
 export async function openNotificationTarget(router: Router, type: string | undefined, data: Record<string, unknown>): Promise<void> {
   const str = (k: string) => (typeof data[k] === 'string' && (data[k] as string).length ? (data[k] as string) : null);
   switch (type) {
-    case 'message': {
+    case 'message':
+    case 'missed_call': {
       const id = str('conversation_id');
       if (id) return router.push({ pathname: '/chat/[conversationId]', params: { conversationId: id } });
       return router.navigate('/(tabs)/messages');

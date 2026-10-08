@@ -245,6 +245,12 @@ function describe(n: NotificationRow, actorName: string): { title: string; body:
       const what = changes.includes("time") ? "new time" : changes.includes("place") ? "new place" : "updated";
       return { title: `📅 ${title}`, body: `${actorName} changed the event (${what}) — tap for details` };
     }
+    case "missed_call": {
+      const kind = n.payload?.kind === "audio" ? "voice" : "video";
+      return { title: actorName, body: `📞 Missed ${kind} call` };
+    }
+    case "gift":
+      return { title: "MATCH", body: `🎁 ${actorName} sent you a gift` };
     case "event_cancelled": {
       const title = typeof n.payload?.title === "string" ? (n.payload.title as string) : "An event";
       return { title: `❌ ${title}`, body: `${actorName} cancelled this event` };

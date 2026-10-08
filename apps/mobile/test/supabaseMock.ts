@@ -48,6 +48,13 @@ const fixtures: Record<string, () => unknown[]> = {
   'rpc:get_live_state': () => [{ status: 'live', viewers: 8, reactions: 12, yes_votes: 3, no_votes: 1, my_vote: null }],
   'rpc:join_live': () => ['viewer'],
   'table:live_messages': () => [{ id: 'm1', stream_id: 'l1', user_id: OTHER, body: 'Welcome everyone!', created_at: NOW }],
+  // chat with OTHER (conversation id = OTHER for the /chat/<OTHER> smoke test)
+  'table:conversations': () => [{ id: OTHER, match_id: 'mt1' }],
+  'table:matches': () => [{ id: 'mt1', user_a: ME, user_b: OTHER, created_at: NOW }],
+  'table:profiles': () => [{ id: OTHER, name: 'Bruno', intention: 'serious' }],
+  'table:messages': () => [
+    { id: 'msg1', conversation_id: OTHER, sender_id: OTHER, type: 'call', content: 'missed:video', media_url: null, media_path: null, duration_ms: null, waveform: null, read_at: null, created_at: NOW },
+  ],
   'table:posts': () => [
     { id: 'p1', user_id: OTHER, type: 'text', content: 'Best pastel de nata?', media_url: null, poll_options: null, created_at: NOW, like_count: 2, comment_count: 1 },
   ],

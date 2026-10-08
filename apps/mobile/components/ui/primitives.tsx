@@ -87,10 +87,12 @@ export function TextButton({ label, onPress, color = T.muted, size = 13.5 }: { l
   );
 }
 
-export function IconBtn({ children, onPress, size = 36, style }: { children: ReactNode; onPress?: () => void; size?: number; style?: StyleProp<ViewStyle> }) {
+export function IconBtn({ children, onPress, size = 36, style, label }: { children: ReactNode; onPress?: () => void; size?: number; style?: StyleProp<ViewStyle>; label?: string }) {
   return (
     <Pressable
       onPress={onPress}
+      accessibilityRole={label ? 'button' : undefined}
+      accessibilityLabel={label}
       hitSlop={6}
       style={({ pressed }) => [
         { width: size, height: size, borderRadius: size / 2, borderWidth: 1, borderColor: T.border, backgroundColor: T.surface2, alignItems: 'center', justifyContent: 'center' },

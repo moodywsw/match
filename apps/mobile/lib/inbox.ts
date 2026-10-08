@@ -10,7 +10,9 @@ export type NotificationType =
   | 'story_like'
   | 'super_like'
   | 'event_update'
-  | 'event_cancelled';
+  | 'event_cancelled'
+  | 'missed_call'
+  | 'gift';
 
 export type InboxItem = {
   id: string;
@@ -126,6 +128,10 @@ export function inboxIcon(type: NotificationType): string {
       return '📅';
     case 'event_cancelled':
       return '❌';
+    case 'missed_call':
+      return '📞';
+    case 'gift':
+      return '🎁';
     default:
       return '🔔';
   }
@@ -162,6 +168,10 @@ export function inboxText(n: InboxItem): string {
       const title = typeof n.payload.title === 'string' ? n.payload.title : 'An event';
       return `${title} was cancelled${n.payload.deleted ? ' and removed' : ''}`;
     }
+    case 'missed_call':
+      return `Missed ${n.payload.kind === 'audio' ? 'voice' : 'video'} call from ${n.actorName} — tap to call back`;
+    case 'gift':
+      return `${n.actorName} sent you a gift 🎁`;
     default:
       return 'New notification';
   }

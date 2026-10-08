@@ -39,6 +39,11 @@ export const CHAT_MEDIA_BUCKET = 'chat-media';
 export function messagePreview(m: { type: string; content: string | null }): string {
   if (m.type === 'image') return '📷 Photo';
   if (m.type === 'voice') return '🎤 Voice message';
+  if (m.type === 'call') {
+    const [status, kind] = (m.content ?? '').split(':');
+    const what = kind === 'audio' ? 'Voice call' : 'Video call';
+    return status === 'missed' ? `📞 Missed ${what.toLowerCase()}` : status === 'declined' ? `📞 ${what} declined` : `📞 ${what}`;
+  }
   return m.content ?? '';
 }
 
