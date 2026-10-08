@@ -1,4 +1,4 @@
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { Bookmark, Heart, MessageCircle, MoreHorizontal, Plus, Send, Share2 } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Image, Pressable, ScrollView, Share, TextInput, View } from 'react-native';
@@ -65,6 +65,7 @@ function StoryRing({ size, seen, children }: { size: number; seen: boolean; chil
 
 export default function SocialTab() {
   const { user, profile } = useAuth();
+  const router = useRouter();
   const { me, toast } = useApp();
   const [feedMode, setFeedMode] = useState('For You');
   const [realPosts, setRealPosts] = useState<FeedPost[]>([]);
@@ -352,6 +353,10 @@ export default function SocialTab() {
         toast={toast}
         meId={user?.id}
         onDeleted={loadStories}
+        onOpenActivity={(storyId) => {
+          setStoryIndex(null);
+          router.push({ pathname: '/story/[storyId]', params: { storyId } });
+        }}
       />
       <CreateStorySheet
         visible={showCreateStory}

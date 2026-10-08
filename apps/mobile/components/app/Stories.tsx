@@ -33,6 +33,7 @@ export function StoryViewer({
   toast,
   meId,
   onDeleted,
+  onOpenActivity,
 }: {
   users: StoryUser[];
   startIndex: number | null;
@@ -41,10 +42,12 @@ export function StoryViewer({
   toast: (m: string) => void;
   meId?: string | null;
   onDeleted?: () => void;
+  /** Owner tapped the views pill → open the viewers / replies screen. */
+  onOpenActivity?: (storyId: string) => void;
 }) {
   return (
     <Modal visible={startIndex !== null} animationType="fade" statusBarTranslucent onRequestClose={onClose}>
-      {startIndex !== null ? <Viewer users={users} startIndex={startIndex} onClose={onClose} onViewed={onViewed} toast={toast} meId={meId ?? null} onDeleted={onDeleted} /> : null}
+      {startIndex !== null ? <Viewer users={users} startIndex={startIndex} onClose={onClose} onViewed={onViewed} toast={toast} meId={meId ?? null} onDeleted={onDeleted} onOpenActivity={onOpenActivity} /> : null}
     </Modal>
   );
 }
@@ -57,6 +60,7 @@ function Viewer({
   toast,
   meId,
   onDeleted,
+  onOpenActivity,
 }: {
   users: StoryUser[];
   startIndex: number;
@@ -65,6 +69,7 @@ function Viewer({
   toast: (m: string) => void;
   meId: string | null;
   onDeleted?: () => void;
+  onOpenActivity?: (storyId: string) => void;
 }) {
   const insets = useSafeAreaInsets();
   const [userIdx, setUserIdx] = useState(startIndex);
@@ -233,6 +238,7 @@ function Viewer({
     if (!real || !frame.id || !meId) return toast(`You liked ${user.name}'s story ❤️`);
     try {
       const res = await respondToStory(frame.id, meId, { kind: 'like' });
+      if (res === 'ok') void pushLatestNotification(user.id);
       toast(res === 'duplicate' ? 'Already liked ❤️' : `You liked ${user.name}'s story ❤️`);
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Like failed');
@@ -372,12 +378,20 @@ function Viewer({
           ) : null}
 
           {own ? (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, alignSelf: 'flex-start', backgroundColor: 'rgba(0,0,0,0.35)', borderRadius: 999, paddingVertical: 8, paddingHorizontal: 14 }}>
+            <Pressable
+              disabled={!real || !onOpenActivity}
+              onPress={() => frame.id && onOpenActivity?.(frame.id)}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 8, alignSelf: 'flex-start', backgroundColor: 'rgba(0,0,0,0.35)', borderRadius: 999, paddingVertical: 8, paddingHorizontal: 14 }}>
               <Eye size={15} color="#fff" />
               <Txt w={600} size={12.5} color="#fff">
                 {stats ? `${stats.views} ${stats.views === 1 ? 'view' : 'views'} · ${stats.replies} ${stats.replies === 1 ? 'reply' : 'replies'}` : real ? '…' : 'Your story'}
               </Txt>
-            </View>
+              {real && onOpenActivity ? (
+                <Txt w={700} size={12.5} color="rgba(255,255,255,0.75)">
+                  ›
+                </Txt>
+              ) : null}
+            </Pressable>
           ) : (
             <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
               <TextInput

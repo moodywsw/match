@@ -96,6 +96,9 @@ export default function RootLayout() {
               <Stack.Screen name="(onboarding)" />
               <Stack.Screen name="(tabs)" />
               <Stack.Screen name="chat/[conversationId]" options={{ animation: 'slide_from_right' }} />
+              <Stack.Screen name="event/[eventId]" options={{ animation: 'slide_from_right' }} />
+              <Stack.Screen name="post/[postId]" options={{ animation: 'slide_from_right' }} />
+              <Stack.Screen name="story/[storyId]" options={{ animation: 'slide_from_right' }} />
               <Stack.Screen name="legal/privacy" options={{ animation: 'slide_from_bottom' }} />
               <Stack.Screen name="legal/terms" options={{ animation: 'slide_from_bottom' }} />
               <Stack.Screen name="+not-found" />

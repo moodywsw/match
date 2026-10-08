@@ -8,12 +8,14 @@ import { Txt } from '@/components/ui/Txt';
 import { T } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
 import { ensureConversation } from '@/lib/chat';
+import { openNotificationTarget } from '@/lib/deeplinks';
+import { subscribePushTaps, type PushTap } from '@/lib/notifications';
 import { personFromDiscover, type Me } from '@/lib/compat';
 import { fetchInterestLabelsForUsers } from '@/lib/interests';
 import { DEMO_MATCHED_IDS, PROFILES, SHOW_DEMO_CONTENT, type Person } from '@/lib/mock';
 import { ageFromBirthDate, fetchDiscoverDeck, fetchPrimaryPhotos, recordPass, sendLike, type DeckFilters } from '@/lib/profile';
 import { perkErrorCode, rewindLastSwipe } from '@/lib/perks';
-import { fetchInbox, inboxIcon, inboxText, markAllRead, subscribeInbox, timeAgo, type InboxItem } from '@/lib/inbox';
+import { fetchInbox, inboxIcon, inboxText, markAllRead, markRead, subscribeInbox, timeAgo, type InboxItem } from '@/lib/inbox';
 import { configureIap, fetchServerTier, type EntitlementId, type Tier } from '@/lib/iap';
 import { pushLatestNotification } from '@/lib/push';
 import { supabase } from '@/lib/supabase';
@@ -51,6 +53,8 @@ type AppContextValue = {
   /** Real notifications (DB triggers) + unread badge count. */
   inbox: InboxItem[];
   unreadCount: number;
+  /** Locally mark a conversation's message notifications read (server already did). */
+  clearInboxFor: (conversationId: string) => void;
   /** Server-side entitlement (public.subscriptions via get_my_tier). */
   tier: Tier;
   refreshTier: () => Promise<Tier>;
@@ -361,6 +365,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     };
   }, [user?.id]);
   const unreadCount = useMemo(() => inbox.filter((n) => !n.readAt).length, [inbox]);
+  const clearInboxFor = useCallback((conversationId: string) => {
+    setInbox((prev) => {
+      if (!prev.some((n) => !n.readAt && n.type === 'message' && n.payload.conversation_id === conversationId)) return prev;
+      const now = new Date().toISOString();
+      return prev.map((n) => (!n.readAt && n.type === 'message' && n.payload.conversation_id === conversationId ? { ...n, readAt: now } : n));
+    });
+  }, []);
 
   const closeNotifications = useCallback(() => {
     setNotifOpen(false);
@@ -374,22 +385,42 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     async (n: InboxItem) => {
       closeNotifications();
       try {
-        if (n.type === 'message' && typeof n.payload.conversation_id === 'string') {
-          router.push({ pathname: '/chat/[conversationId]', params: { conversationId: n.payload.conversation_id } });
-        } else if (n.type === 'match' && typeof n.payload.match_id === 'string') {
-          const convId = await ensureConversation(n.payload.match_id);
-          router.push({ pathname: '/chat/[conversationId]', params: { conversationId: convId } });
-        } else if (n.type === 'super_like') {
-          router.navigate('/(tabs)/discover');
-        } else {
-          router.navigate('/(tabs)/social');
-        }
+        await openNotificationTarget(router, n.type, n.payload);
       } catch (err) {
         toast(err instanceof Error ? err.message : 'Could not open');
       }
     },
     [closeNotifications, router, toast]
   );
+
+  /* ---------- push taps → deep link (running + cold start) ---------- */
+  const pendingTap = useRef<PushTap | null>(null);
+  const flushTapRef = useRef<() => void>(() => {});
+  flushTapRef.current = () => {
+    const tap = pendingTap.current;
+    if (!tap || !ready) return;
+    pendingTap.current = null;
+    const nid = typeof tap.data.notification_id === 'string' ? tap.data.notification_id : null;
+    if (nid) {
+      setInbox((prev) => prev.map((x) => (x.id === nid && !x.readAt ? { ...x, readAt: new Date().toISOString() } : x)));
+      markRead(nid).catch(() => {});
+    }
+    openNotificationTarget(router, tap.type, tap.data).catch((err) => toast(err instanceof Error ? err.message : 'Could not open'));
+  };
+  useEffect(
+    () =>
+      subscribePushTaps((tap) => {
+        pendingTap.current = tap;
+        flushTapRef.current();
+      }),
+    []
+  );
+  useEffect(() => {
+    if (!ready) return;
+    // Cold start: let AuthGate settle on the tabs first, then open the target screen.
+    const t = setTimeout(() => flushTapRef.current(), 700);
+    return () => clearTimeout(t);
+  }, [ready]);
 
   const notifItems: NotifItem[] = inbox.map((n) => ({
     id: n.id,
@@ -425,11 +456,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       openPremium: () => openPaywall('match_plus'),
       inbox,
       unreadCount,
+      clearInboxFor,
       tier,
       refreshTier,
       requirePremium,
     }),
-    [me, refreshMe, people, peopleLoading, peopleError, reloadPeople, deckFilters, rewind, rewoundId, personById, likedIds, passedIds, demoMatchedIds, like, pass, removePerson, resetDeck, toast, inbox, unreadCount, tier, refreshTier, requirePremium, openPaywall]
+    [me, refreshMe, people, peopleLoading, peopleError, reloadPeople, deckFilters, rewind, rewoundId, personById, likedIds, passedIds, demoMatchedIds, like, pass, removePerson, resetDeck, toast, inbox, unreadCount, clearInboxFor, tier, refreshTier, requirePremium, openPaywall]
   );
 
   return (

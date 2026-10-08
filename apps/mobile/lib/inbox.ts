@@ -1,7 +1,16 @@
 import { fetchPrimaryPhotos } from './profile';
 import { supabase } from './supabase';
 
-export type NotificationType = 'match' | 'message' | 'post_like' | 'comment' | 'story_reply' | 'super_like';
+export type NotificationType =
+  | 'match'
+  | 'message'
+  | 'post_like'
+  | 'comment'
+  | 'story_reply'
+  | 'story_like'
+  | 'super_like'
+  | 'event_update'
+  | 'event_cancelled';
 
 export type InboxItem = {
   id: string;
@@ -111,6 +120,12 @@ export function inboxIcon(type: NotificationType): string {
       return '✨';
     case 'super_like':
       return '⭐';
+    case 'story_like':
+      return '💖';
+    case 'event_update':
+      return '📅';
+    case 'event_cancelled':
+      return '❌';
     default:
       return '🔔';
   }
@@ -134,6 +149,19 @@ export function inboxText(n: InboxItem): string {
         : `${n.actorName} replied to your story${preview ? `: “${preview}”` : ''}`;
     case 'super_like':
       return `${n.actorName} super liked you ⭐ — they're first in your Discover`;
+    case 'story_like':
+      return `${n.actorName} liked your story`;
+    case 'event_update': {
+      const title = typeof n.payload.title === 'string' ? n.payload.title : 'An event';
+      const changes = Array.isArray(n.payload.changes) ? (n.payload.changes as string[]) : [];
+      if (changes.includes('reinstated')) return `${title} is back on 🎉`;
+      const what = [changes.includes('time') && 'time', changes.includes('place') && 'place', changes.includes('title') && 'name'].filter(Boolean).join(' & ');
+      return `${title}: ${what ? `${what} changed` : 'details updated'} — tap for details`;
+    }
+    case 'event_cancelled': {
+      const title = typeof n.payload.title === 'string' ? n.payload.title : 'An event';
+      return `${title} was cancelled${n.payload.deleted ? ' and removed' : ''}`;
+    }
     default:
       return 'New notification';
   }

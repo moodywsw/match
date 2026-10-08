@@ -239,3 +239,37 @@ export async function fetchStoryStats(storyId: string): Promise<{ views: number;
   ]);
   return { views: views ?? 0, replies: replies ?? 0 };
 }
+
+export type StoryActivityKind = 'view' | 'like' | 'reply' | 'answer' | 'vote';
+export type StoryActivity = {
+  kind: StoryActivityKind;
+  user_id: string;
+  name: string;
+  body: string | null;
+  option_index: number | null;
+  at: string;
+};
+
+/** Owner-only (server raises not_owner otherwise): viewers, likes, replies/answers, votes. Blocked users omitted. */
+export async function fetchStoryActivity(storyId: string): Promise<StoryActivity[]> {
+  const { data, error } = await supabase.rpc('get_story_activity', { p_story_id: storyId });
+  if (error) throw error;
+  return (data || []) as StoryActivity[];
+}
+
+/** One of my own stories as a frame (for the activity screen preview). Null when expired/deleted. */
+export async function fetchOwnStoryFrame(meId: string, storyId: string): Promise<{ frame: StoryFrame; expiresAt: string } | null> {
+  const { data, error } = await supabase
+    .from('stories')
+    .select('id, user_id, type, media_path, thumb_path, duration_ms, content, created_at, expires_at')
+    .eq('id', storyId)
+    .eq('user_id', meId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  const row = data as StoryRow & { expires_at: string };
+  const paths = [row.media_path, row.thumb_path].filter((p): p is string => !!p);
+  const urls = paths.length ? await signedUrls(STORY_MEDIA_BUCKET, paths) : {};
+  const frame = toFrame(row, urls);
+  return frame ? { frame, expiresAt: row.expires_at } : null;
+}

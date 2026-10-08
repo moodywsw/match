@@ -113,3 +113,37 @@ export async function clearPushToken(userId: string, token: string | null) {
   if (!token) return;
   await supabase.from('push_tokens').delete().eq('user_id', userId).eq('token', token);
 }
+
+export type PushTap = { key: string; type: string | undefined; data: Record<string, unknown> };
+
+function toTap(res: Notifications.NotificationResponse | null | undefined): PushTap | null {
+  if (!res || res.actionIdentifier !== Notifications.DEFAULT_ACTION_IDENTIFIER) return null;
+  const content = res.notification.request.content;
+  const data = (content.data ?? {}) as Record<string, unknown>;
+  return {
+    key: res.notification.request.identifier,
+    type: typeof data.type === 'string' ? data.type : undefined,
+    data,
+  };
+}
+
+/**
+ * Calls `onTap` for push notifications the user taps — both while the app is
+ * running and the one that cold-started it. Each notification is handled once.
+ */
+export function subscribePushTaps(onTap: (tap: PushTap) => void): () => void {
+  if (Platform.OS === 'web') return () => {};
+  const seen = new Set<string>();
+  const handle = (res: Notifications.NotificationResponse | null | undefined) => {
+    const tap = toTap(res);
+    if (!tap || seen.has(tap.key)) return;
+    seen.add(tap.key);
+    onTap(tap);
+    void Notifications.clearLastNotificationResponseAsync?.().catch(() => {});
+  };
+  const sub = Notifications.addNotificationResponseReceivedListener(handle);
+  Notifications.getLastNotificationResponseAsync()
+    .then(handle)
+    .catch(() => {});
+  return () => sub.remove();
+}

@@ -66,6 +66,31 @@ export async function fetchFeed(userId: string, limit = 40): Promise<FeedPost[]>
   }));
 }
 
+/** A single post (deep link target for post_like / comment notifications). */
+export async function fetchPost(postId: string, userId: string): Promise<FeedPost | null> {
+  const { data: p, error } = await supabase
+    .from('posts')
+    .select('id, user_id, type, content, media_url, created_at')
+    .eq('id', postId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!p) return null;
+  const [{ data: author }, photos, { data: likes }, { count }] = await Promise.all([
+    supabase.from('profiles').select('id, name').eq('id', p.user_id).maybeSingle(),
+    fetchPrimaryPhotos([p.user_id]),
+    supabase.from('post_likes').select('user_id').eq('post_id', postId),
+    supabase.from('comments').select('id', { count: 'exact', head: true }).eq('post_id', postId),
+  ]);
+  return {
+    ...p,
+    authorName: (author?.name as string) || 'Member',
+    authorPhoto: photos[p.user_id] ?? null,
+    likeCount: likes?.length ?? 0,
+    commentCount: count ?? 0,
+    likedByMe: !!likes?.some((l) => l.user_id === userId),
+  };
+}
+
 export async function createTextPost(userId: string, content: string): Promise<void> {
   const { error } = await supabase.from('posts').insert({
     user_id: userId,
