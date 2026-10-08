@@ -126,11 +126,12 @@ Store the service role only in Supabase secrets / CI — never in the repo or cl
 
 **DB trigger via `pg_net`:** extension is available on the project but not required. Prefer invoking from the app or a trusted worker until you enable `pg_net` and store the service role in Vault. See `supabase/migrations/20261007_send_push_notes.sql` for a template (not auto-armed).
 
-#### IAP / RevenueCat (not enabled)
+#### IAP / RevenueCat
 
-- Schema tables `subscriptions` / `payments` are **service-role / webhook only** — clients must never write them.  
-- `apps/mobile/lib/iap.ts` is an empty stub (`configured: false`); it refuses purchase/restore.  
-- When ready: create RevenueCat project + store products, install `react-native-purchases`, put SDK keys in **EAS Secrets**, webhook → Edge Function with service role. See comments in `lib/iap.ts`.
+- `apps/mobile/lib/iap.ts` wraps `react-native-purchases`. Keys: `EXPO_PUBLIC_REVENUECAT_IOS_KEY` / `_ANDROID_KEY` (empty = paywall shows, purchases disabled, no crash). In **Expo Go** the SDK runs in *Preview API Mode* (simulated purchases).
+- **Entitlements come only from the server**: `public.subscriptions`, written exclusively by the `revenuecat-webhook` Edge Function (service role). Clients have SELECT on their own rows only; `get_my_tier()` returns `free | match_plus | super_match`.
+- DB-enforced gating: free = 25 likes + 1 super like / 24h; MATCH+ = unlimited likes + 5 super likes; SUPER MATCH = unlimited. "Who liked you" via `get_likes_received()` (raises `premium_required` for free users).
+- Setup steps: `docs/STORE_CHECKLIST.md`.
 
 ## What’s real vs stub (mobile)
 
@@ -142,12 +143,15 @@ Store the service role only in Supabase secrets / CI — never in the repo or cl
 | Chat list / thread + realtime `messages` | **Real** |
 | Feed posts, likes, comments | **Real** |
 | Profile photo upload → Storage + `photos` | **Real** (needs device permissions) |
-| Stories strip | **Read stub** (lists active `stories`) |
+| Stories (photo / **video ≤30s** / text / question / poll, 24h) | **Real** |
 | Events list + RSVP | **Minimal real** (reads/writes tables; no admin create UI) |
 | Live | **Metadata stub** (lists open `live_streams`; no A/V) |
 | Push permission + token → `push_tokens` | **Stub wired** (needs EAS projectId + APNs/FCM to deliver) |
-| IAP / RevenueCat | **Scaffold only** (`lib/iap.ts` — no purchases, no keys) |
-| EAS preview/production config | **Scaffolded** (`eas.json` + `app.config.ts` placeholders) |
+| IAP / RevenueCat | **Wired** (needs RevenueCat + store accounts; Preview Mode in Expo Go) |
+| EAS dev/preview/production config, icons, splash, permissions | **Ready** (submit IDs are placeholders) |
+| In-app account deletion (`delete-account` Edge Function) | **Real** |
+| 18+ age gate (onboarding + DB trigger) | **Real** |
+| Privacy policy / Terms (PT/EN) | **Drafts — need legal review** (`docs/legal`, `/legal/*` screens) |
 | Interests catalog + `user_interests` | **Real** (seeded; onboarding/profile multi-select; Discover chips) |
 | Block / report | **Real** (Discover ⋯ → `blocks` / `reports`; deck excludes **either-way** via `get_blocked_peer_ids()`) |
 | Verification selfie pipeline | **Not built** |
