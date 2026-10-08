@@ -23,7 +23,9 @@ export function extFromMime(mime: string | undefined, fallback = 'jpg'): string 
   if (mime.includes('heic')) return 'heic';
   if (mime.includes('heif')) return 'heif';
   if (mime.includes('jpeg') || mime.includes('jpg')) return 'jpg';
-  if (mime.includes('m4a') || mime.includes('mp4') || mime.includes('aac')) return 'm4a';
+  if (mime.includes('quicktime') || mime === 'video/mov') return 'mov';
+  if (mime.includes('video') || mime.includes('mp4')) return 'mp4';
+  if (mime.includes('m4a') || mime.includes('aac')) return 'm4a';
   return fallback;
 }
 

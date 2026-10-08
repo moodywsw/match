@@ -1,8 +1,10 @@
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Camera, Eye, Heart, MessageCircle, Send, Sparkles, Trash2, Type, X } from 'lucide-react-native';
+import { Camera, Eye, Heart, MessageCircle, Send, Sparkles, Trash2, Type, Video as VideoIcon, Volume2, VolumeX, X } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
 import { Animated, Easing, Image, KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
+import { createVideoPlayer, useVideoPlayer, VideoView } from 'expo-video';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Sheet } from '@/components/ui/Sheet';
@@ -17,6 +19,11 @@ import { deleteStory, fetchMyVote, fetchPollCounts, fetchStoryStats, markStoryVi
 import { inputStyle } from './AuthForm';
 
 const DURATION = 4500;
+
+function frameDurationMs(frame: StoryFrame | undefined): number {
+  if (frame?.type === 'video') return Math.max(500, Math.min(31000, frame.durationMs || 5000));
+  return DURATION;
+}
 
 export function StoryViewer({
   users,
@@ -63,6 +70,7 @@ function Viewer({
   const [userIdx, setUserIdx] = useState(startIndex);
   const [frameIdx, setFrameIdx] = useState(0);
   const [paused, setPaused] = useState(false);
+  const [muted, setMuted] = useState(false);
   const [reply, setReply] = useState('');
   const [voted, setVoted] = useState<number | null>(null);
   const [counts, setCounts] = useState<number[] | null>(null);
@@ -72,6 +80,12 @@ function Viewer({
   const frame: StoryFrame | undefined = user?.frames?.[frameIdx];
   const real = !!user?.real && !!frame?.id && !!meId;
   const own = !!user?.isMe;
+  const videoUri = frame?.type === 'video' ? frame.video : null;
+  const player = useVideoPlayer(videoUri, (p) => {
+    p.loop = false;
+    p.muted = true;
+    p.timeUpdateEventInterval = 0.05;
+  });
 
   useEffect(() => {
     if (user) onViewed(user.id);
@@ -123,14 +137,53 @@ function Viewer({
     progress.setValue(0);
   }, [userIdx, frameIdx, progress]);
 
+  // Keep mute / pause in sync with the native player.
   useEffect(() => {
+    if (!videoUri) return;
+    player.muted = muted;
+  }, [muted, player, videoUri]);
+
+  useEffect(() => {
+    if (!videoUri) return;
+    if (paused) player.pause();
+    else player.play();
+  }, [paused, player, videoUri, frameIdx]);
+
+  // Video: drive the progress bar from player.currentTime and advance on end.
+  useEffect(() => {
+    if (!videoUri) return;
+    progress.setValue(0);
+    const onTime = ({ currentTime }: { currentTime: number }) => {
+      const d = player.duration > 0 ? player.duration : frameDurationMs(frame) / 1000;
+      if (d > 0) progress.setValue(Math.min(1, Math.max(0, currentTime / d)));
+    };
+    const onEnd = () => nextRef.current();
+    const s1 = player.addListener('timeUpdate', onTime);
+    const s2 = player.addListener('playToEnd', onEnd);
+    if (!paused) player.play();
+    return () => {
+      s1.remove();
+      s2.remove();
+      try {
+        player.pause();
+      } catch {
+        /* disposed */
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [videoUri, frameIdx, player]);
+
+  // Non-video: Animated.timing as before.
+  useEffect(() => {
+    if (videoUri) return;
     if (paused) {
       progress.stopAnimation();
       return;
     }
     let done = false;
+    const total = frameDurationMs(frame);
     progress.stopAnimation((v) => {
-      const remaining = DURATION * (1 - (v || 0));
+      const remaining = total * (1 - (v || 0));
       Animated.timing(progress, { toValue: 1, duration: remaining, easing: Easing.linear, useNativeDriver: false }).start(({ finished }) => {
         if (finished && !done) nextRef.current();
       });
@@ -138,7 +191,7 @@ function Viewer({
     return () => {
       done = true;
     };
-  }, [userIdx, frameIdx, paused, progress]);
+  }, [userIdx, frameIdx, paused, progress, videoUri, frame]);
 
   if (!user || !frame) return null;
 
@@ -202,7 +255,15 @@ function Viewer({
 
   return (
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: '#000' }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      {frame.type === 'photo' ? (
+      {frame.type === 'video' ? (
+        videoUri ? (
+          <VideoView player={player} style={StyleSheet.absoluteFill} contentFit="cover" nativeControls={false} />
+        ) : frame.thumb ? (
+          <Image source={{ uri: frame.thumb }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+        ) : (
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: T.surface2 }]} />
+        )
+      ) : frame.type === 'photo' ? (
         frame.image ? (
           <Image source={{ uri: frame.image }} style={StyleSheet.absoluteFill} resizeMode="cover" />
         ) : (
@@ -237,6 +298,11 @@ function Viewer({
           {frame.createdAt ? timeAgo(frame.createdAt) : '2h'}
         </Txt>
         <View style={{ flex: 1 }} />
+        {frame.type === 'video' ? (
+          <Pressable onPress={() => setMuted((m) => !m)} hitSlop={10} style={{ marginRight: 14 }}>
+            {muted ? <VolumeX size={18} color="#fff" /> : <Volume2 size={18} color="#fff" />}
+          </Pressable>
+        ) : null}
         {own && real ? (
           <Pressable onPress={remove} hitSlop={10} style={{ marginRight: 14 }}>
             <Trash2 size={18} color="#fff" />
@@ -248,11 +314,11 @@ function Viewer({
       </View>
 
       <View style={{ flex: 1 }}>
-        <Pressable onPress={prevFrame} onPressIn={() => setPaused(true)} onPressOut={() => setPaused(false)} style={{ position: 'absolute', left: 0, top: 0, bottom: 90, width: '32%' }} />
-        <Pressable onPress={nextFrame} onPressIn={() => setPaused(true)} onPressOut={() => setPaused(false)} style={{ position: 'absolute', right: 0, top: 0, bottom: 90, width: '68%' }} />
+        <Pressable onPress={prevFrame} onLongPress={() => undefined} delayLongPress={220} onPressIn={() => setPaused(true)} onPressOut={() => setPaused(false)} style={{ position: 'absolute', left: 0, top: 0, bottom: 90, width: '32%' }} />
+        <Pressable onPress={nextFrame} onLongPress={() => undefined} delayLongPress={220} onPressIn={() => setPaused(true)} onPressOut={() => setPaused(false)} style={{ position: 'absolute', right: 0, top: 0, bottom: 90, width: '68%' }} />
 
         <View pointerEvents="box-none" style={{ flex: 1, justifyContent: 'flex-end', paddingHorizontal: 18, paddingBottom: insets.bottom + 16 }}>
-          {frame.type === 'photo' && frame.caption ? (
+          {(frame.type === 'photo' || frame.type === 'video') && frame.caption ? (
             <Txt w={600} size={15} color="#fff" style={{ marginBottom: 16, textShadowColor: 'rgba(0,0,0,0.5)', textShadowRadius: 8 }}>
               {frame.caption}
             </Txt>
@@ -344,6 +410,7 @@ export function CreateStorySheet({ visible, onClose, onCreate }: { visible: bool
   const [text, setText] = useState('');
   const [picked, setPicked] = useState<Kind | null>(null);
   const [photo, setPhoto] = useState<{ uri: string; mime: string } | null>(null);
+  const [video, setVideo] = useState<{ uri: string; mime: string; durationMs: number; thumbUri?: string | null } | null>(null);
   const [optA, setOptA] = useState('');
   const [optB, setOptB] = useState('');
   const [busy, setBusy] = useState(false);
@@ -353,6 +420,7 @@ export function CreateStorySheet({ visible, onClose, onCreate }: { visible: bool
       setText('');
       setPicked(null);
       setPhoto(null);
+      setVideo(null);
       setOptA('');
       setOptB('');
       setBusy(false);
@@ -361,10 +429,43 @@ export function CreateStorySheet({ visible, onClose, onCreate }: { visible: bool
 
   const options = [
     { type: 'photo' as const, label: 'Photo', Icon: Camera },
+    { type: 'video' as const, label: 'Video', Icon: VideoIcon },
     { type: 'text' as const, label: 'Text', Icon: Type },
     { type: 'question' as const, label: 'Question', Icon: MessageCircle },
     { type: 'poll' as const, label: 'Poll', Icon: Sparkles },
   ];
+
+  const makeThumb = async (uri: string): Promise<string | null> => {
+    try {
+      const p = createVideoPlayer(uri);
+      p.muted = true;
+      // Wait briefly for the asset to load so a frame exists.
+      await new Promise((r) => setTimeout(r, 400));
+      const [thumb] = await p.generateThumbnailsAsync(0.2, { maxWidth: 720, maxHeight: 1280 });
+      p.release();
+      if (!thumb) return null;
+      const ctx = ImageManipulator.manipulate(thumb);
+      const ref = await ctx.renderAsync();
+      const saved = await ref.saveAsync({ format: SaveFormat.JPEG, compress: 0.7 });
+      return saved.uri;
+    } catch {
+      return null;
+    }
+  };
+
+  const acceptVideo = async (asset: ImagePicker.ImagePickerAsset) => {
+    // duration is seconds (float) on both platforms.
+    const raw = asset.duration ?? 0;
+    const ms = Math.round(raw < 1000 ? raw * 1000 : raw);
+    if (ms > 31_000) return;
+    const thumbUri = await makeThumb(asset.uri);
+    setVideo({
+      uri: asset.uri,
+      mime: asset.mimeType || 'video/mp4',
+      durationMs: Math.max(500, Math.min(30_000, ms || 5000)),
+      thumbUri,
+    });
+  };
 
   const pickPhoto = async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -374,12 +475,37 @@ export function CreateStorySheet({ visible, onClose, onCreate }: { visible: bool
     if (asset) setPhoto({ uri: asset.uri, mime: asset.mimeType || 'image/jpeg' });
   };
 
+  const pickVideo = async () => {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) return;
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['videos'],
+      videoMaxDuration: 30,
+      quality: 0.8,
+    });
+    const asset = result.canceled ? null : result.assets?.[0];
+    if (asset) await acceptVideo(asset);
+  };
+
+  const recordVideo = async () => {
+    const cam = await ImagePicker.requestCameraPermissionsAsync();
+    if (!cam.granted) return;
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ['videos'],
+      videoMaxDuration: 30,
+      cameraType: ImagePicker.CameraType.front,
+    });
+    const asset = result.canceled ? null : result.assets?.[0];
+    if (asset) await acceptVideo(asset);
+  };
+
   const choose = (type: Kind) => {
     setPicked(type);
     if (type === 'photo' && !photo) void pickPhoto();
+    if (type === 'video' && !video) void pickVideo();
   };
 
-  const ready = picked === 'photo' ? !!photo : picked === 'text' ? !!text.trim() : !!picked;
+  const ready = picked === 'photo' ? !!photo : picked === 'video' ? !!video : picked === 'text' ? !!text.trim() : !!picked;
 
   const create = async () => {
     if (!picked || busy) return;
@@ -387,6 +513,9 @@ export function CreateStorySheet({ visible, onClose, onCreate }: { visible: bool
     if (picked === 'photo') {
       if (!photo) return;
       story = { type: 'photo', uri: photo.uri, mime: photo.mime, caption: text.trim() || undefined };
+    } else if (picked === 'video') {
+      if (!video) return;
+      story = { type: 'video', uri: video.uri, mime: video.mime, durationMs: video.durationMs, thumbUri: video.thumbUri, caption: text.trim() || undefined };
     } else if (picked === 'text') story = { type: 'text', text: text.trim() };
     else if (picked === 'question') story = { type: 'question', question: text.trim() || 'Ask me anything!' };
     else story = { type: 'poll', question: text.trim() || 'This or that?', options: [optA.trim() || 'Option A', optB.trim() || 'Option B'] };
@@ -420,12 +549,29 @@ export function CreateStorySheet({ visible, onClose, onCreate }: { visible: bool
           ) : null}
         </Pressable>
       ) : null}
+      {picked === 'video' ? (
+        <View style={{ marginBottom: 12 }}>
+          <Pressable onPress={pickVideo} style={{ height: 150, borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderStyle: video ? 'solid' : 'dashed', borderColor: video ? T.border : `${T.rose}88`, backgroundColor: `${T.rose}11`, alignItems: 'center', justifyContent: 'center' }}>
+            {video?.thumbUri ? <Image source={{ uri: video.thumbUri }} style={StyleSheet.absoluteFill} resizeMode="cover" /> : null}
+            <View style={{ backgroundColor: 'rgba(0,0,0,0.45)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999 }}>
+              <Txt w={600} size={12.5} color="#fff">
+                {video ? `Video · ${Math.round(video.durationMs / 1000)}s · tap to change` : 'Choose a video (max 30s)'}
+              </Txt>
+            </View>
+          </Pressable>
+          <Pressable onPress={recordVideo} style={{ marginTop: 8, alignSelf: 'center', paddingVertical: 8, paddingHorizontal: 14, borderRadius: 999, borderWidth: 1, borderColor: T.border }}>
+            <Txt w={600} size={12} color={T.rose}>
+              Or record with camera
+            </Txt>
+          </Pressable>
+        </View>
+      ) : null}
       {picked ? (
         <TextInput
           value={text}
           onChangeText={setText}
-          maxLength={picked === 'photo' ? 200 : 280}
-          placeholder={picked === 'photo' ? 'Add a caption…' : picked === 'text' ? 'Say something…' : picked === 'question' ? 'What do you want to ask?' : 'This or that?'}
+          maxLength={picked === 'photo' || picked === 'video' ? 200 : 280}
+          placeholder={picked === 'photo' || picked === 'video' ? 'Add a caption…' : picked === 'text' ? 'Say something…' : picked === 'question' ? 'What do you want to ask?' : 'This or that?'}
           placeholderTextColor={T.mutedDim}
           style={[inputStyle, { fontSize: 13.5, paddingVertical: 14, borderRadius: 14, marginBottom: picked === 'poll' ? 10 : 16 }]}
         />

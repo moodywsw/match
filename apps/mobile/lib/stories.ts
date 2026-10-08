@@ -1,3 +1,5 @@
+import { File } from 'expo-file-system';
+
 import { T } from '@/constants/theme';
 
 import type { StoryFrame, StoryUser } from './mock';
@@ -16,7 +18,9 @@ const DEFAULT_BG: Record<string, [string, string]> = {
 type StoryRow = {
   id: string;
   user_id: string;
-  type: 'photo' | 'text' | 'question' | 'poll';
+  type: 'photo' | 'video' | 'text' | 'question' | 'poll';
+  duration_ms: number | null;
+  thumb_path: string | null;
   media_path: string | null;
   content: Record<string, unknown> | null;
   created_at: string;
@@ -34,6 +38,15 @@ function toFrame(row: StoryRow, urls: Record<string, string>): StoryFrame | null
   switch (row.type) {
     case 'photo':
       return { ...meta, type: 'photo', image: row.media_path ? urls[row.media_path] ?? null : null, caption: typeof c.caption === 'string' ? c.caption : undefined };
+    case 'video':
+      return {
+        ...meta,
+        type: 'video',
+        video: row.media_path ? urls[row.media_path] ?? null : null,
+        thumb: row.thumb_path ? urls[row.thumb_path] ?? null : null,
+        durationMs: Math.max(500, Math.min(31000, Number(row.duration_ms) || 5000)),
+        caption: typeof c.caption === 'string' ? c.caption : undefined,
+      };
     case 'text':
       return { ...meta, type: 'text', text: String(c.text ?? ''), bg: bgOf(row) };
     case 'question':
@@ -53,7 +66,7 @@ function toFrame(row: StoryRow, urls: Record<string, string>): StoryFrame | null
 export async function fetchStoryUsers(meId: string): Promise<StoryUser[]> {
   const { data, error } = await supabase
     .from('stories')
-    .select('id, user_id, type, media_path, content, created_at')
+    .select('id, user_id, type, media_path, thumb_path, duration_ms, content, created_at')
     .gt('expires_at', new Date().toISOString())
     .order('created_at', { ascending: true })
     .limit(300);
@@ -63,7 +76,7 @@ export async function fetchStoryUsers(meId: string): Promise<StoryUser[]> {
 
   const authorIds = [...new Set(rows.map((r) => r.user_id))];
   const storyIds = rows.map((r) => r.id);
-  const paths = rows.map((r) => r.media_path).filter((p): p is string => !!p);
+  const paths = [...new Set(rows.flatMap((r) => [r.media_path, r.thumb_path].filter((p): p is string => !!p)))];
   const [{ data: profiles }, photos, urls, { data: views }] = await Promise.all([
     supabase.from('profiles').select('id, name').in('id', authorIds),
     fetchPrimaryPhotos(authorIds).catch(() => ({}) as Record<string, string | null>),
@@ -103,17 +116,46 @@ export async function fetchStoryUsers(meId: string): Promise<StoryUser[]> {
 
 export type NewStory =
   | { type: 'photo'; uri: string; mime: string; caption?: string }
+  | { type: 'video'; uri: string; mime: string; durationMs: number; thumbUri?: string | null; caption?: string }
   | { type: 'text'; text: string }
   | { type: 'question'; question: string }
   | { type: 'poll'; question: string; options: string[] };
 
+const MAX_VIDEO_MS = 30_000;
+const MAX_VIDEO_BYTES = 40 * 1024 * 1024;
+
 export async function createStory(meId: string, input: NewStory): Promise<void> {
   let media_path: string | null = null;
+  let thumb_path: string | null = null;
+  let duration_ms: number | null = null;
   let content: Record<string, unknown>;
+  const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   if (input.type === 'photo') {
     const mime = /heic|heif/i.test(input.mime) ? 'image/jpeg' : input.mime;
-    media_path = `${meId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${extFromMime(mime)}`;
+    media_path = `${meId}/${stamp}.${extFromMime(mime)}`;
     await uploadToBucket(STORY_MEDIA_BUCKET, media_path, input.uri, mime);
+    content = input.caption ? { caption: input.caption.slice(0, 200) } : {};
+  } else if (input.type === 'video') {
+    const ms = Math.round(input.durationMs);
+    if (!(ms >= 500 && ms <= MAX_VIDEO_MS + 1000)) throw new Error('Videos must be 30 seconds or shorter');
+    const mime = /quicktime|mov/i.test(input.mime) ? 'video/quicktime' : 'video/mp4';
+    media_path = `${meId}/${stamp}.${extFromMime(mime)}`;
+    try {
+      const size = new File(input.uri).size;
+      if (typeof size === 'number' && size > MAX_VIDEO_BYTES) throw new Error('Video is too large (max ~40 MB)');
+    } catch (e) {
+      if (e instanceof Error && e.message.includes('too large')) throw e;
+    }
+    await uploadToBucket(STORY_MEDIA_BUCKET, media_path, input.uri, mime);
+    duration_ms = Math.min(MAX_VIDEO_MS + 1000, Math.max(500, ms));
+    if (input.thumbUri) {
+      thumb_path = `${meId}/${stamp}-thumb.jpg`;
+      try {
+        await uploadToBucket(STORY_MEDIA_BUCKET, thumb_path, input.thumbUri, 'image/jpeg');
+      } catch {
+        thumb_path = null;
+      }
+    }
     content = input.caption ? { caption: input.caption.slice(0, 200) } : {};
   } else if (input.type === 'text') {
     content = { text: input.text.slice(0, 280), bg: DEFAULT_BG.text };
@@ -122,18 +164,27 @@ export async function createStory(meId: string, input: NewStory): Promise<void> 
   } else {
     content = { question: input.question.slice(0, 280), options: input.options.slice(0, 4).map((o) => o.slice(0, 40)), bg: DEFAULT_BG.poll };
   }
-  const { error } = await supabase.from('stories').insert({ user_id: meId, type: input.type, media_path, content });
+  const { error } = await supabase.from('stories').insert({
+    user_id: meId,
+    type: input.type,
+    media_path,
+    thumb_path,
+    duration_ms,
+    content,
+  });
   if (error) {
-    if (media_path) void supabase.storage.from(STORY_MEDIA_BUCKET).remove([media_path]);
+    const cleanup = [media_path, thumb_path].filter((p): p is string => !!p);
+    if (cleanup.length) void supabase.storage.from(STORY_MEDIA_BUCKET).remove(cleanup);
     throw error;
   }
 }
 
 export async function deleteStory(meId: string, storyId: string): Promise<void> {
-  const { data } = await supabase.from('stories').select('media_path').eq('id', storyId).eq('user_id', meId).maybeSingle();
+  const { data } = await supabase.from('stories').select('media_path, thumb_path').eq('id', storyId).eq('user_id', meId).maybeSingle();
   const { error } = await supabase.from('stories').delete().eq('id', storyId).eq('user_id', meId);
   if (error) throw error;
-  if (data?.media_path) void supabase.storage.from(STORY_MEDIA_BUCKET).remove([data.media_path as string]);
+  const cleanup = [data?.media_path, data?.thumb_path].filter((p): p is string => !!p);
+  if (cleanup.length) void supabase.storage.from(STORY_MEDIA_BUCKET).remove(cleanup);
 }
 
 export async function markStoryViewed(storyId: string, meId: string): Promise<void> {

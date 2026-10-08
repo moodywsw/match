@@ -188,6 +188,7 @@ type FrameMeta = { id?: string; createdAt?: string };
 export type StoryFrame = FrameMeta &
   (
     | { type: 'photo'; image: string | null; caption?: string }
+    | { type: 'video'; video: string | null; thumb: string | null; durationMs: number; caption?: string }
     | { type: 'text'; text: string; bg: [string, string] }
     | { type: 'question'; question: string; bg: [string, string] }
     | { type: 'poll'; question: string; options: string[]; bg: [string, string] }
