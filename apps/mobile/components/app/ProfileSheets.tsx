@@ -12,6 +12,7 @@ import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { deleteMyAccount } from '@/lib/account';
 import { restorePurchases } from '@/lib/iap';
+import { fetchIncognito, perkErrorCode, setIncognito } from '@/lib/perks';
 import { fetchAllInterests, fetchUserInterestIds, setUserInterests, type Interest } from '@/lib/interests';
 import { INTENTIONS } from '@/lib/mock';
 import { fetchPrivacySettings, updatePrivacySettings, upsertOwnProfile, type PrivacySettings } from '@/lib/profile';
@@ -26,7 +27,8 @@ export function SettingsSheet({ visible, onClose, verified, onVerified }: { visi
   const router = useRouter();
   const [deleting, setDeleting] = useState(false);
   const [privacy, setPrivacy] = useState<PrivacySettings>({ show_online_status: true, show_distance: true, is_discoverable: true, who_can_message: 'matches' });
-  const [local, setLocal] = useState({ readReceipts: true, incognito: false });
+  const [local, setLocal] = useState({ readReceipts: true });
+  const [incognito, setIncognitoState] = useState(false);
   const [showVerify, setShowVerify] = useState(false);
   const [showBlocked, setShowBlocked] = useState(false);
   const [showReport, setShowReport] = useState(false);
@@ -36,7 +38,25 @@ export function SettingsSheet({ visible, onClose, verified, onVerified }: { visi
     fetchPrivacySettings(user.id)
       .then((p) => p && setPrivacy(p))
       .catch(() => {});
+    fetchIncognito(user.id)
+      .then(setIncognitoState)
+      .catch(() => {});
   }, [visible, user?.id]);
+
+  /** Server-enforced: trigger rejects enabling unless SUPER MATCH; RLS + deck hide you from people you haven't liked. */
+  const toggleIncognito = async () => {
+    if (!user?.id) return;
+    const next = !incognito;
+    if (next && !requirePremium('super_match', 'Incognito is part of SUPER MATCH')) return;
+    setIncognitoState(next);
+    try {
+      await setIncognito(user.id, next);
+      toast(next ? 'Incognito on — only people you like can see you' : 'Incognito off');
+    } catch (err) {
+      setIncognitoState(!next);
+      toast(perkErrorCode(err) === 'premium_required' ? 'Incognito is part of SUPER MATCH' : err instanceof Error ? err.message : 'Could not save setting');
+    }
+  };
 
   const setP = async (fields: Partial<PrivacySettings>) => {
     if (!user?.id) return;
@@ -96,12 +116,9 @@ export function SettingsSheet({ visible, onClose, verified, onVerified }: { visi
       <SettingRow icon={<Check size={16} color={T.text} />} label="Read receipts" active={local.readReceipts} onPress={() => setLocal((l) => ({ ...l, readReceipts: !l.readReceipts }))} />
       <SettingRow
         icon={<EyeOff size={16} color={T.text} />}
-        label="Incognito mode (SUPER MATCH)"
-        active={local.incognito && tier === 'super_match'}
-        onPress={() => {
-          if (!requirePremium('super_match', 'Incognito is part of SUPER MATCH')) return;
-          setLocal((l) => ({ ...l, incognito: !l.incognito }));
-        }}
+        label={tier === 'super_match' ? 'Incognito — only people you like see you' : 'Incognito mode (SUPER MATCH)'}
+        active={incognito && tier === 'super_match'}
+        onPress={() => void toggleIncognito()}
       />
       <SettingRow icon={<Users size={16} color={T.text} />} label="Discoverable in search" active={privacy.is_discoverable} onPress={() => setP({ is_discoverable: !privacy.is_discoverable })} />
 

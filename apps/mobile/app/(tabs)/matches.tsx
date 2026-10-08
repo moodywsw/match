@@ -1,6 +1,6 @@
 import { BlurView } from 'expo-blur';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { Crown, Heart, Star } from 'lucide-react-native';
+import { Crown, Eye, Heart, Star } from 'lucide-react-native';
 import { useCallback, useState } from 'react';
 import { Pressable, View } from 'react-native';
 
@@ -11,12 +11,16 @@ import { T } from '@/constants/theme';
 import { useApp } from '@/contexts/AppContext';
 import { useChats } from '@/hooks/useChats';
 import { fetchLikesReceived, fetchLikesReceivedCount, type ReceivedLike } from '@/lib/likes';
+import { fetchProfileViewers, fetchProfileViewersCount, type ProfileViewer } from '@/lib/perks';
 import { fetchPrimaryPhotos } from '@/lib/profile';
+import { timeAgo } from '@/lib/inbox';
 
 export default function MatchesTab() {
   const router = useRouter();
   const { rows, loading, reload, error } = useChats();
-  const { tier, openPremium, toast } = useApp();
+  const { tier, openPremium, toast, requirePremium } = useApp();
+  const [viewCount, setViewCount] = useState(0);
+  const [viewers, setViewers] = useState<ProfileViewer[]>([]);
   const [likeCount, setLikeCount] = useState(0);
   const [likes, setLikes] = useState<ReceivedLike[]>([]);
   const [photos, setPhotos] = useState<Record<string, string | null>>({});
@@ -40,14 +44,34 @@ export default function MatchesTab() {
     }
   }, [tier]);
 
+  /** Count: every tier. Who viewed (list): SUPER MATCH only — enforced by get_profile_viewers. */
+  const loadViews = useCallback(async () => {
+    try {
+      setViewCount(await fetchProfileViewersCount());
+      if (tier !== 'super_match') {
+        setViewers([]);
+        return;
+      }
+      const list = await fetchProfileViewers();
+      setViewers(list);
+      if (list.length) {
+        const ph = await fetchPrimaryPhotos(list.map((v) => v.viewerId));
+        setPhotos((prev) => ({ ...prev, ...ph }));
+      }
+    } catch (err) {
+      console.warn('[match] profile views load', err);
+    }
+  }, [tier]);
+
   useFocusEffect(
     useCallback(() => {
       void loadLikes();
-    }, [loadLikes]),
+      void loadViews();
+    }, [loadLikes, loadViews]),
   );
 
   return (
-    <Screen padTop={16} refreshing={loading} onRefresh={() => { void reload(); void loadLikes(); }}>
+    <Screen padTop={16} refreshing={loading} onRefresh={() => { void reload(); void loadLikes(); void loadViews(); }}>
       <FadeUp>
         <Txt v="display" size={22} style={{ marginBottom: 4 }}>
           Your Matches
@@ -105,6 +129,52 @@ export default function MatchesTab() {
                       {l.name}{l.age ? `, ${l.age}` : ''}
                     </Txt>
                   </Pressable>
+                ))}
+              </View>
+            ) : null}
+          </Pressable>
+        ) : null}
+
+        {viewCount > 0 || tier === 'super_match' ? (
+          <Pressable
+            onPress={() => {
+              if (tier !== 'super_match') requirePremium('super_match', 'See who viewed you with SUPER MATCH');
+            }}
+            style={{ marginBottom: 22, borderRadius: 20, overflow: 'hidden', borderWidth: 1, borderColor: tier !== 'super_match' ? `${T.amber}66` : T.border, backgroundColor: T.surface }}>
+            <View style={{ padding: 14, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: `${T.amber}22`, alignItems: 'center', justifyContent: 'center' }}>
+                <Eye size={18} color={T.amber} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Txt w={700} size={14}>
+                  {viewCount === 0 ? 'No profile views yet' : viewCount === 1 ? '1 person viewed your profile' : `${viewCount} people viewed your profile`}
+                </Txt>
+                <Txt size={12} color={T.muted} style={{ marginTop: 2 }}>
+                  {tier !== 'super_match' ? 'Last 30 days · SUPER MATCH shows who' : 'Last 30 days'}
+                </Txt>
+              </View>
+              {tier !== 'super_match' ? <Crown size={18} color={T.amber} /> : null}
+            </View>
+            {tier === 'super_match' && viewers.length ? (
+              <View style={{ paddingHorizontal: 14, paddingBottom: 12, gap: 10 }}>
+                {viewers.slice(0, 8).map((v) => (
+                  <View key={v.viewerId} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    <Photo uri={photos[v.viewerId] ?? null} name={v.name} style={{ width: 38, height: 38, borderRadius: 19 }} />
+                    <View style={{ flex: 1 }}>
+                      <Txt w={600} size={13}>
+                        {v.name}
+                        {v.age ? `, ${v.age}` : ''}
+                      </Txt>
+                      {v.city ? (
+                        <Txt size={11} color={T.muted}>
+                          {v.city}
+                        </Txt>
+                      ) : null}
+                    </View>
+                    <Txt v="mono" size={11} color={T.mutedDim}>
+                      {timeAgo(v.viewedAt)}
+                    </Txt>
+                  </View>
                 ))}
               </View>
             ) : null}

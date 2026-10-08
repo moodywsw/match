@@ -19,6 +19,8 @@ export type ChatRow = {
   time: string;
   unread: boolean;
   demo: boolean;
+  /** SUPER MATCH first message awaiting my reply — pinned to the top with a badge. */
+  priority: boolean;
 };
 
 function ago(iso: string | null) {
@@ -69,10 +71,13 @@ export function useChats() {
       online: false,
       preview: c.lastMessage || 'Say hi 👋',
       time: ago(c.lastMessageAt || c.matchedAt),
-      unread: false,
+      unread: c.priority,
       demo: false,
+      priority: c.priority,
     };
   });
+  // Stable: priority conversations first, otherwise keep match order.
+  realRows.sort((a, b) => Number(b.priority) - Number(a.priority));
 
   const demoRows: ChatRow[] = SHOW_DEMO_CONTENT
     ? demoMatchedIds
@@ -90,6 +95,7 @@ export function useChats() {
           time: i === 0 ? 'now' : `${i}h`,
           unread: i < 2,
           demo: true,
+          priority: false,
         }))
     : [];
 

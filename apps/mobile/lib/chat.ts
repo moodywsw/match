@@ -11,6 +11,8 @@ export type ChatListItem = {
   matchedAt: string;
   lastMessage: string | null;
   lastMessageAt: string | null;
+  /** SUPER MATCH sender's first message that I haven't replied to yet — pinned + badged. */
+  priority: boolean;
 };
 
 export type ChatMessage = {
@@ -89,10 +91,12 @@ export async function fetchChatList(userId: string): Promise<ChatListItem[]> {
 
   const convIds = Object.values(convByMatch).filter(Boolean) as string[];
   const lastByConv: Record<string, { content: string | null; created_at: string }> = {};
+  const priorityIn = new Set<string>();
+  const iReplied = new Set<string>();
   if (convIds.length) {
     const { data: msgs } = await supabase
       .from('messages')
-      .select('conversation_id, type, content, created_at')
+      .select('conversation_id, sender_id, type, content, created_at, is_priority')
       .in('conversation_id', convIds)
       .order('created_at', { ascending: false });
     for (const msg of msgs || []) {
@@ -102,6 +106,8 @@ export async function fetchChatList(userId: string): Promise<ChatListItem[]> {
           created_at: msg.created_at,
         };
       }
+      if (msg.sender_id === userId) iReplied.add(msg.conversation_id);
+      else if (msg.is_priority) priorityIn.add(msg.conversation_id);
     }
   }
 
@@ -120,6 +126,7 @@ export async function fetchChatList(userId: string): Promise<ChatListItem[]> {
         matchedAt: m.created_at,
         lastMessage: last?.content ?? null,
         lastMessageAt: last?.created_at ?? null,
+        priority: priorityIn.has(conversationId) && !iReplied.has(conversationId),
       } satisfies ChatListItem;
     })
     .filter(Boolean) as ChatListItem[];

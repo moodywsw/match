@@ -1,4 +1,5 @@
 import { useRouter } from 'expo-router';
+import { Star } from 'lucide-react-native';
 import { Pressable, View } from 'react-native';
 
 import { Screen } from '@/components/app/Screen';
@@ -32,9 +33,10 @@ export default function MessagesTab() {
                 alignItems: 'center',
                 gap: 12,
                 paddingVertical: 10,
-                paddingHorizontal: 6,
+                paddingHorizontal: p.priority ? 10 : 6,
                 borderBottomWidth: i < rows.length - 1 ? 1 : 0,
                 borderBottomColor: T.border,
+                ...(p.priority ? { backgroundColor: `${T.amber}14`, borderRadius: 16, borderWidth: 1, borderColor: `${T.amber}55`, marginBottom: 4 } : null),
                 opacity: pressed ? 0.7 : 1,
               })}>
               <View>
@@ -48,6 +50,14 @@ export default function MessagesTab() {
                       {p.name}
                     </Txt>
                     {p.demo ? <DemoTag /> : null}
+                    {p.priority ? (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, paddingVertical: 2, paddingHorizontal: 7, borderRadius: 999, backgroundColor: T.amber }}>
+                        <Star size={9} color={T.ink} fill={T.ink} />
+                        <Txt w={800} size={9.5} color={T.ink}>
+                          PRIORITY
+                        </Txt>
+                      </View>
+                    ) : null}
                   </View>
                   <Txt size={11} color={T.mutedDim}>
                     {p.time}
@@ -57,7 +67,7 @@ export default function MessagesTab() {
                   {p.preview}
                 </Txt>
               </View>
-              {p.unread ? <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: T.rose }} /> : null}
+              {p.unread ? <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: p.priority ? T.amber : T.rose }} /> : null}
             </Pressable>
           ))}
         </View>
