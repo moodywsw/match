@@ -10,6 +10,7 @@ import { Txt } from '@/components/ui/Txt';
 import { T } from '@/constants/theme';
 import { fallbackPrice, fetchOfferingPrices, getIapStatus, purchaseEntitlement, restorePurchases, type EntitlementId, type Tier } from '@/lib/iap';
 import { NOTIFS } from '@/lib/mock';
+import { COMPARISON, defaultPaywallLang, PAYWALL_COPY, PLAN_FEATURES, type PaywallLang } from '@/lib/plans';
 
 export type NotifItem = { id?: string; icon: string; text: string; time: string; unread?: boolean; onPress?: () => void };
 
@@ -66,10 +67,59 @@ function FeatureIcon({ icon, label }: { icon: ReactNode; label: string }) {
   );
 }
 
-const PLANS: Record<EntitlementId, { name: string; price: string; color: string; features: string[] }> = {
-  match_plus: { name: 'MATCH+', price: '€14.99/mo', color: T.violet, features: ['Unlimited likes', 'See who liked you', 'Advanced filters', '5 boosts / month', 'Rewind last swipe'] },
-  super_match: { name: 'SUPER MATCH', price: '€24.99/mo', color: T.amber, features: ['Everything in MATCH+', 'Incognito mode', 'Unlimited messages', 'Weekly profile boost', 'Exclusive events access'] },
+const PLANS: Record<EntitlementId, { name: string; color: string }> = {
+  match_plus: { name: 'MATCH+', color: T.violet },
+  super_match: { name: 'SUPER MATCH', color: T.amber },
 };
+
+function Cell({ v, color, w = 1 }: { v: string; color: string; w?: number }) {
+  return (
+    <View style={{ flex: w, alignItems: 'center', justifyContent: 'center' }}>
+      {v === '✓' ? (
+        <Check size={14} color={color} />
+      ) : (
+        <Txt v="mono" size={10.5} color={v === '—' ? T.mutedDim : T.text} center>
+          {v}
+        </Txt>
+      )}
+    </View>
+  );
+}
+
+function ComparisonTable({ lang, highlight }: { lang: PaywallLang; highlight: EntitlementId }) {
+  const rows = COMPARISON[lang];
+  const head: [string, string][] = [
+    [PAYWALL_COPY[lang].free, T.muted],
+    ['MATCH+', T.violet],
+    ['SUPER', T.amber],
+  ];
+  return (
+    <View style={{ borderWidth: 1, borderColor: T.border, borderRadius: 16, overflow: 'hidden', marginBottom: 16 }}>
+      <View style={{ flexDirection: 'row', paddingVertical: 8, paddingHorizontal: 10, backgroundColor: T.surface2 }}>
+        <View style={{ flex: 1.6 }} />
+        {head.map(([h, c], i) => (
+          <View key={h} style={{ flex: 1, alignItems: 'center' }}>
+            <Txt w={800} size={10.5} color={(i === 1 && highlight === 'match_plus') || (i === 2 && highlight === 'super_match') ? c : T.muted}>
+              {h}
+            </Txt>
+          </View>
+        ))}
+      </View>
+      {rows.map(([label, f, plus, sup], i) => (
+        <View key={label} style={{ flexDirection: 'row', paddingVertical: 7, paddingHorizontal: 10, borderTopWidth: i ? 1 : 0, borderTopColor: T.border }}>
+          <View style={{ flex: 1.6, justifyContent: 'center' }}>
+            <Txt size={11.5} color={T.muted}>
+              {label}
+            </Txt>
+          </View>
+          <Cell v={f} color={T.muted} />
+          <Cell v={plus} color={T.violet} />
+          <Cell v={sup} color={T.amber} />
+        </View>
+      ))}
+    </View>
+  );
+}
 
 export function PremiumModal({
   visible,
@@ -91,6 +141,9 @@ export function PremiumModal({
   const [busy, setBusy] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [prices, setPrices] = useState<Partial<Record<EntitlementId, string>>>({});
+  const [lang, setLang] = useState<PaywallLang>(defaultPaywallLang);
+  const c = PAYWALL_COPY[lang];
+  const features = PLAN_FEATURES[lang][plan];
   const status = getIapStatus();
   const p = PLANS[plan];
   const current = tier === plan || (tier === 'super_match' && plan === 'match_plus');
@@ -157,13 +210,22 @@ export function PremiumModal({
 
   return (
     <Sheet visible={visible} onClose={onClose} scrim={T.scrimDeep} maxHeight="88%">
+      <View style={{ flexDirection: 'row', alignSelf: 'flex-end', gap: 2, backgroundColor: T.surface2, borderRadius: 999, padding: 3, marginBottom: 4 }}>
+        {(['pt', 'en'] as PaywallLang[]).map((l) => (
+          <Pressable key={l} onPress={() => setLang(l)} style={{ paddingVertical: 4, paddingHorizontal: 10, borderRadius: 999, backgroundColor: lang === l ? T.rose : 'transparent' }}>
+            <Txt w={700} size={10.5} color={lang === l ? '#fff' : T.muted}>
+              {l.toUpperCase()}
+            </Txt>
+          </Pressable>
+        ))}
+      </View>
       <View style={{ alignItems: 'center', marginBottom: 20 }}>
         <Crown size={30} color={T.amber} />
-        <Txt v="display" size={24} style={{ marginTop: 8, marginBottom: 4 }}>
-          Go further with MATCH+
+        <Txt v="display" size={24} center style={{ marginTop: 8, marginBottom: 4 }}>
+          {c.title}
         </Txt>
         <Txt size={13} color={T.muted} center>
-          Cancel anytime. Your free experience stays fully usable.
+          {c.subtitle}
         </Txt>
       </View>
       <View style={{ flexDirection: 'row', gap: 10, marginBottom: 18 }}>
@@ -180,21 +242,27 @@ export function PremiumModal({
               </Txt>
               {tier === key ? (
                 <Txt size={10.5} w={700} color={pl.color} style={{ marginTop: 4 }}>
-                  Current plan
+                  {c.current}
                 </Txt>
               ) : null}
             </Pressable>
           );
         })}
       </View>
-      <View style={{ gap: 10, marginBottom: 22 }}>
-        {p.features.map((f) => (
-          <View key={f} style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
-            <Check size={16} color={p.color} />
-            <Txt size={13.5}>{f}</Txt>
+      <View style={{ gap: 10, marginBottom: 18 }}>
+        {features.map((f) => (
+          <View key={f} style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
+            <Check size={16} color={p.color} style={{ marginTop: 1 }} />
+            <Txt size={13.5} style={{ flex: 1 }}>
+              {f}
+            </Txt>
           </View>
         ))}
       </View>
+      <Txt w={700} size={12} color={T.muted} style={{ marginBottom: 8 }}>
+        {c.compare.toUpperCase()}
+      </Txt>
+      <ComparisonTable lang={lang} highlight={plan} />
       <View style={{ flexDirection: 'row', gap: 10, marginBottom: 10 }}>
         <FeatureIcon icon={<Zap size={16} color={T.amber} />} label="Boost" />
         <FeatureIcon icon={<Eye size={16} color={T.amber} />} label="See likes" />
@@ -203,22 +271,22 @@ export function PremiumModal({
       </View>
       {status.preview ? (
         <Txt size={11} color={T.mutedDim} center style={{ marginBottom: 8 }}>
-          Expo Go preview — purchases are simulated, no money is charged.
+          {c.preview}
         </Txt>
       ) : null}
-      <PrimaryButton label={current ? `You have ${p.name}` : `Continue with ${p.name}`} colors={[p.color, T.rose]} onPress={onContinue} loading={busy} />
+      <PrimaryButton label={current ? c.youHave(p.name) : c.continueWith(p.name)} colors={[p.color, T.rose]} onPress={onContinue} loading={busy} />
       <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 18 }}>
-        <TextButton label={restoring ? 'Restoring…' : 'Restore purchases'} onPress={onRestore} size={12.5} />
-        <TextButton label="Maybe later" onPress={onClose} size={12.5} />
+        <TextButton label={restoring ? c.restoring : c.restore} onPress={onRestore} size={12.5} />
+        <TextButton label={c.later} onPress={onClose} size={12.5} />
       </View>
       <Txt size={10} color={T.mutedDim} center style={{ marginTop: 2, lineHeight: 14 }}>
-        Subscriptions renew monthly until cancelled in your App Store / Google Play settings.{' '}
+        {c.renew}{' '}
         <Txt size={10} color={T.muted} onPress={() => openLegal('/legal/terms')}>
-          Terms
+          {c.terms}
         </Txt>
         {' · '}
         <Txt size={10} color={T.muted} onPress={() => openLegal('/legal/privacy')}>
-          Privacy
+          {c.privacy}
         </Txt>
       </Txt>
     </Sheet>

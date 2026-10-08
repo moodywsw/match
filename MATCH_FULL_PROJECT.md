@@ -2694,8 +2694,8 @@ function SafetyLink({ icon, label, onClick }) {
 function PremiumModal({ onClose }) {
   const [plan, setPlan] = useState("match_plus");
   const plans = {
-    match_plus: { name: "MATCH+", price: "€14.99/mo", color: T.violet, features: ["Unlimited likes", "See who liked you", "Advanced filters", "5 boosts / month", "Rewind last swipe"] },
-    super_match: { name: "SUPER MATCH", price: "€24.99/mo", color: T.amber, features: ["Everything in MATCH+", "Incognito mode", "Unlimited messages", "Weekly profile boost", "Exclusive events access"] },
+    match_plus: { name: "MATCH+", price: "€14.99/mo", color: T.violet, features: ["Unlimited likes", "See who liked you", "Advanced filters (verified, intention, exact age & distance)", "5 super likes / day", "Rewind last swipe", "Full why-you-match (7 dimensions)", "1 boost / month (30 min)"] },
+    super_match: { name: "SUPER MATCH", price: "€24.99/mo", color: T.amber, features: ["Everything in MATCH+", "Incognito (only people you like see you)", "Unlimited super likes", "See who viewed your profile", "Message priority"] },
   };
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 95, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
