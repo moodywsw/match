@@ -159,7 +159,13 @@ Store the service role only in Supabase secrets / CI — never in the repo or cl
 | Feed posts, likes, comments | **Real** |
 | Profile photo upload → Storage + `photos` | **Real** (needs device permissions) |
 | Stories (photo / **video ≤30s** / text / question / poll, 24h) | **Real** |
-| Events list + RSVP | **Minimal real** (reads/writes tables; no admin create UI) |
+| Events: create/edit/cancel/delete (cover → `event-covers`), filters, going/interested + counts, attendees | **Real** (`get_events` / `get_event_attendees` RPCs; capacity + blocks enforced by trigger; attendees notified + pushed on change/cancel) |
+| Approximate location + map | **Real, opt-in** (`expo-location` → `set_my_location`; only a ~1.5 km grid cell stored in `private.user_locations`; map = jittered km offsets from `get_map_people` / `get_events`; Discover distance computed server-side; honours show distance / discoverable / incognito / blocks) |
+| Push + in-app notification deep links | **Real** (message/match → chat, like/comment → `/post/[id]`, story reply/like → `/story/[id]` activity, event change → `/event/[id]`) |
+| Story owner activity (viewers, likes, replies/answers, votes) + story-like notification | **Real** (`get_story_activity`, owner-only) |
+| Chat read receipts (✓ sent / ✓✓ read) | **Real** (`mark_conversation_read`; `profiles.read_receipts` toggle off ⇒ `read_at` never written; unread from `conversation_reads`) |
+| Friday answer (own profile edit + others' detail) | **Real** |
+| Expired story media cleanup | **Real** (pg_cron `cleanup-story-media` hourly → Edge Function with runtime service key; cron auth = public anon JWT in Vault `match_cron_anon_key`, not in git) |
 | Live | **Metadata stub** (lists open `live_streams`; no A/V) |
 | Push permission + token → `push_tokens` | **Stub wired** (needs EAS projectId + APNs/FCM to deliver) |
 | IAP / RevenueCat | **Wired** (needs RevenueCat + store accounts; Preview Mode in Expo Go) |
