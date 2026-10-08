@@ -5,13 +5,21 @@
   },
   "build": {
     "development": {
+      "environment": "development",
       "developmentClient": true,
       "distribution": "internal",
       "ios": {
         "simulator": true
       }
     },
+    "development-device": {
+      "extends": "development",
+      "ios": {
+        "simulator": false
+      }
+    },
     "preview": {
+      "environment": "preview",
       "distribution": "internal",
       "android": {
         "buildType": "apk"
@@ -21,7 +29,11 @@
       }
     },
     "production": {
-      "autoIncrement": true
+      "environment": "production",
+      "autoIncrement": true,
+      "android": {
+        "buildType": "app-bundle"
+      }
     }
   },
   "submit": {
@@ -31,7 +43,8 @@
       },
       "android": {
         "serviceAccountKeyPath": "./google-service-account.json",
-        "track": "internal"
+        "track": "internal",
+        "releaseStatus": "draft"
       }
     }
   }

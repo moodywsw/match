@@ -118,7 +118,15 @@ export function AuthForm({ mode }: { mode: 'sign-in' | 'sign-up' }) {
             </Txt>
           </Pressable>
           <Txt size={11.5} color={T.mutedDim} center style={{ marginTop: 10, lineHeight: 17 }}>
-            MATCH is for adults 18+. By continuing you agree to our Terms and Privacy Policy.
+            MATCH is for adults 18+. By continuing you agree to our{' '}
+            <Txt size={11.5} color={T.muted} onPress={() => router.push('/legal/terms')}>
+              Terms
+            </Txt>{' '}
+            and{' '}
+            <Txt size={11.5} color={T.muted} onPress={() => router.push('/legal/privacy')}>
+              Privacy Policy
+            </Txt>
+            .
           </Txt>
         </FadeUp>
       </ScrollView>

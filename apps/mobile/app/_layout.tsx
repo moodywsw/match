@@ -40,6 +40,8 @@ function AuthGate({ children, fontsReady }: { children: React.ReactNode; fontsRe
     const inAuth = root === '(auth)';
     const inOnboarding = root === '(onboarding)';
     const onLanding = !root || root === 'index';
+    // Legal pages are reachable signed in or out (sign-up, paywall, settings).
+    if (root === 'legal') return;
 
     if (!session) {
       if (!inAuth && !onLanding) router.replace('/');
@@ -94,6 +96,8 @@ export default function RootLayout() {
               <Stack.Screen name="(onboarding)" />
               <Stack.Screen name="(tabs)" />
               <Stack.Screen name="chat/[conversationId]" options={{ animation: 'slide_from_right' }} />
+              <Stack.Screen name="legal/privacy" options={{ animation: 'slide_from_bottom' }} />
+              <Stack.Screen name="legal/terms" options={{ animation: 'slide_from_bottom' }} />
               <Stack.Screen name="+not-found" />
             </Stack>
           </AppProvider>

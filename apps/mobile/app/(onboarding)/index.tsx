@@ -155,7 +155,8 @@ export default function OnboardingScreen() {
       router.replace('/(tabs)/home');
     } catch (err) {
       setStage('form');
-      setError(err instanceof Error ? err.message : 'Could not save your profile');
+      const msg = err instanceof Error ? err.message : String((err as { message?: string })?.message ?? '');
+      setError(msg.includes('must_be_18') ? 'You need to be 18 or older to use MATCH.' : msg || 'Could not save your profile');
     }
   }
 

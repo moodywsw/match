@@ -1,7 +1,8 @@
 import { LinearGradient } from 'expo-linear-gradient';
-import { BadgeCheck, Camera, Check, ChevronRight, Eye, EyeOff, Lock, MapPin, Shield, Users } from 'lucide-react-native';
+import { useRouter } from 'expo-router';
+import { BadgeCheck, Camera, Check, ChevronRight, Eye, EyeOff, FileText, Lock, MapPin, RotateCcw, Shield, Trash2, Users } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Easing, Pressable, TextInput, View } from 'react-native';
+import { Alert, Animated, Easing, Pressable, TextInput, View } from 'react-native';
 
 import { CenterModal, Sheet } from '@/components/ui/Sheet';
 import { Avatar, Chip, EmptyState, PrimaryButton, SafetyLink, SettingRow, TextButton } from '@/components/ui/primitives';
@@ -9,6 +10,8 @@ import { Txt } from '@/components/ui/Txt';
 import { T } from '@/constants/theme';
 import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
+import { deleteMyAccount } from '@/lib/account';
+import { restorePurchases } from '@/lib/iap';
 import { fetchAllInterests, fetchUserInterestIds, setUserInterests, type Interest } from '@/lib/interests';
 import { INTENTIONS } from '@/lib/mock';
 import { fetchPrivacySettings, updatePrivacySettings, upsertOwnProfile, type PrivacySettings } from '@/lib/profile';
@@ -18,8 +21,10 @@ import { inputStyle } from './AuthForm';
 
 /* ------------------------------ settings ------------------------------ */
 export function SettingsSheet({ visible, onClose, verified, onVerified }: { visible: boolean; onClose: () => void; verified: boolean; onVerified: () => void }) {
-  const { user } = useAuth();
-  const { toast } = useApp();
+  const { user, signOut } = useAuth();
+  const { toast, requirePremium, refreshTier, tier } = useApp();
+  const router = useRouter();
+  const [deleting, setDeleting] = useState(false);
   const [privacy, setPrivacy] = useState<PrivacySettings>({ show_online_status: true, show_distance: true, is_discoverable: true, who_can_message: 'matches' });
   const [local, setLocal] = useState({ readReceipts: true, incognito: false });
   const [showVerify, setShowVerify] = useState(false);
@@ -45,12 +50,59 @@ export function SettingsSheet({ visible, onClose, verified, onVerified }: { visi
     }
   };
 
+  const openLegal = (path: '/legal/privacy' | '/legal/terms') => {
+    onClose();
+    router.push(path);
+  };
+
+  const onRestore = async () => {
+    const res = await restorePurchases();
+    if (!res.ok) return toast(res.error);
+    const t = await refreshTier();
+    toast(t === 'free' ? 'No active subscription found' : 'Purchases restored ✨');
+  };
+
+  const confirmDelete = () => {
+    Alert.alert(
+      'Delete your account?',
+      `This permanently deletes your profile, photos, matches, messages and stories. It can't be undone.${tier !== 'free' ? '\n\nYour subscription is billed by the App Store / Google Play — cancel it there, deleting the account does not stop it.' : ''}`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete forever',
+          style: 'destructive',
+          onPress: async () => {
+            setDeleting(true);
+            try {
+              await deleteMyAccount();
+              onClose();
+              toast('Your account was deleted');
+              await signOut();
+            } catch (err) {
+              toast(err instanceof Error ? err.message : 'Could not delete account');
+            } finally {
+              setDeleting(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   return (
     <Sheet visible={visible} onClose={onClose} title="Safety & privacy" icon={<Shield size={18} color={T.mint} />}>
       <SettingRow icon={<Eye size={16} color={T.text} />} label="Show online status" active={privacy.show_online_status} onPress={() => setP({ show_online_status: !privacy.show_online_status })} />
       <SettingRow icon={<MapPin size={16} color={T.text} />} label="Show distance" active={privacy.show_distance} onPress={() => setP({ show_distance: !privacy.show_distance })} />
       <SettingRow icon={<Check size={16} color={T.text} />} label="Read receipts" active={local.readReceipts} onPress={() => setLocal((l) => ({ ...l, readReceipts: !l.readReceipts }))} />
-      <SettingRow icon={<EyeOff size={16} color={T.text} />} label="Incognito mode (MATCH+)" active={local.incognito} onPress={() => setLocal((l) => ({ ...l, incognito: !l.incognito }))} />
+      <SettingRow
+        icon={<EyeOff size={16} color={T.text} />}
+        label="Incognito mode (SUPER MATCH)"
+        active={local.incognito && tier === 'super_match'}
+        onPress={() => {
+          if (!requirePremium('super_match', 'Incognito is part of SUPER MATCH')) return;
+          setLocal((l) => ({ ...l, incognito: !l.incognito }));
+        }}
+      />
       <SettingRow icon={<Users size={16} color={T.text} />} label="Discoverable in search" active={privacy.is_discoverable} onPress={() => setP({ is_discoverable: !privacy.is_discoverable })} />
 
       <Txt w={700} size={13} color={T.muted} style={{ marginTop: 18, marginBottom: 8 }}>
@@ -80,6 +132,10 @@ export function SettingsSheet({ visible, onClose, verified, onVerified }: { visi
         onPress={() => !verified && setShowVerify(true)}
         trailing={<ChevronRight size={15} color={T.mutedDim} />}
       />
+      <SafetyLink icon={<RotateCcw size={16} color={T.text} />} label="Restore purchases" onPress={() => void onRestore()} trailing={<ChevronRight size={15} color={T.mutedDim} />} />
+      <SafetyLink icon={<FileText size={16} color={T.text} />} label="Privacy policy" onPress={() => openLegal('/legal/privacy')} trailing={<ChevronRight size={15} color={T.mutedDim} />} />
+      <SafetyLink icon={<FileText size={16} color={T.text} />} label="Terms of service" onPress={() => openLegal('/legal/terms')} trailing={<ChevronRight size={15} color={T.mutedDim} />} />
+      <SafetyLink icon={<Trash2 size={16} color={T.rose} />} label={deleting ? 'Deleting account…' : 'Delete account'} color={T.rose} onPress={() => !deleting && confirmDelete()} />
 
       <Txt size={11} color={T.mutedDim} style={{ marginTop: 18, lineHeight: 16.5 }}>
         MATCH only ever shows an approximate distance — your exact location is never shared with other users. Built with GDPR-ready data controls.

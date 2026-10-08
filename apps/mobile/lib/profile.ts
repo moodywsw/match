@@ -43,9 +43,14 @@ export type MatchRow = {
 };
 
 /** Default DOB ~25 years ago — required NOT NULL on profiles. */
+/** A birth date that yields exactly `age` today (DB enforces 18+). */
 export function defaultBirthDate(age = 25): string {
-  const year = new Date().getFullYear() - age;
-  return `${year}-06-15`;
+  const d = new Date();
+  d.setFullYear(d.getFullYear() - age);
+  d.setDate(d.getDate() - 1);
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${mm}-${dd}`;
 }
 
 export function ageFromBirthDate(birthDate: string | null | undefined): number | null {

@@ -16,18 +16,21 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     orientation: 'portrait',
     icon: './assets/images/icon.png',
     scheme: 'match',
-    userInterfaceStyle: 'automatic',
+    userInterfaceStyle: 'dark',
+    backgroundColor: '#15121C',
     owner: process.env.EXPO_OWNER || 'moidys-team',
     ios: {
       supportsTablet: true,
       bundleIdentifier: 'com.match.app',
       infoPlist: {
         UIBackgroundModes: ['remote-notification'],
+        // Only standard HTTPS/TLS is used → exempt from export compliance docs.
+        ITSAppUsesNonExemptEncryption: false,
       },
     },
     android: {
       adaptiveIcon: {
-        backgroundColor: '#0B0B0F',
+        backgroundColor: '#15121C',
         foregroundImage: './assets/images/android-icon-foreground.png',
         backgroundImage: './assets/images/android-icon-background.png',
         monochromeImage: './assets/images/android-icon-monochrome.png',
@@ -48,10 +51,18 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         {
           image: './assets/images/splash-icon.png',
           resizeMode: 'contain',
-          backgroundColor: '#0B0B0F',
+          imageWidth: 220,
+          backgroundColor: '#15121C',
         },
       ],
       'expo-secure-store',
+      [
+        'expo-video',
+        {
+          supportsBackgroundPlayback: false,
+          supportsPictureInPicture: false,
+        },
+      ],
       [
         'expo-audio',
         {
@@ -62,13 +73,15 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         'expo-image-picker',
         {
           photosPermission: 'Match needs photo access for your profile pictures, stories and chat photos.',
+          cameraPermission: 'Match uses the camera so you can take photos and record video stories.',
+          microphonePermission: 'Match uses the microphone to record voice messages and the sound of your video stories.',
         },
       ],
       [
         'expo-notifications',
         {
-          icon: './assets/images/icon.png',
-          color: '#E11D48',
+          icon: './assets/images/notification-icon.png',
+          color: '#FF5573',
           defaultChannel: 'default',
         },
       ],
