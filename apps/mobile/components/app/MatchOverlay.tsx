@@ -10,7 +10,7 @@ import { Txt } from '@/components/ui/Txt';
 import { T } from '@/constants/theme';
 
 const IGNITE_DELAY = 700;
-const SPECTACLE_TOTAL = 6000;
+const SPECTACLE_TOTAL = 5000;
 const { width: W, height: H } = Dimensions.get('window');
 
 function FloatingHeart({ left, duration, delay }: { left: `${number}%`; duration: number; delay: number }) {
@@ -69,7 +69,7 @@ export type MatchOverlayData = {
 
 /**
  * The signature MATCH moment.
- * Phase 1 (6s): matchstick strikes, ignites (pop + sparks + amber flash), "MATCH!" pops above it.
+ * Phase 1 (5s): matchstick strikes, ignites (pop + sparks + amber flash), "MATCH!" pops above it.
  * Phase 2: "You and {name} liked each other", overlapping circles with a small lit match,
  * [Start the conversation] and "Keep discovering".
  */
