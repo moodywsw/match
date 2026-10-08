@@ -55,6 +55,12 @@ const fixtures: Record<string, () => unknown[]> = {
   'table:messages': () => [
     { id: 'msg1', conversation_id: OTHER, sender_id: OTHER, type: 'call', content: 'missed:video', media_url: null, media_path: null, duration_ms: null, waveform: null, read_at: null, created_at: NOW },
   ],
+  'table:coin_packs': () => [
+    { product_id: 'coins_100', coins: 100, sort: 1 },
+    { product_id: 'coins_550', coins: 550, sort: 2 },
+    { product_id: 'coins_1200', coins: 1200, sort: 3 },
+  ],
+  'table:wallets': () => [{ coins: 42, diamonds: 7 }],
   'table:posts': () => [
     { id: 'p1', user_id: OTHER, type: 'text', content: 'Best pastel de nata?', media_url: null, poll_options: null, created_at: NOW, like_count: 2, comment_count: 1 },
   ],

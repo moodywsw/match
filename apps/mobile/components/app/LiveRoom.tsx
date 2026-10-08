@@ -1,5 +1,5 @@
 import { LinearGradient } from 'expo-linear-gradient';
-import { Heart, Radio, Send, Users, Video, X } from 'lucide-react-native';
+import { Gift as GiftIcon, Heart, Radio, Send, Users, Video, X } from 'lucide-react-native';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -29,6 +29,7 @@ import {
 import { LIVE_CATS, LIVE_CHAT, type LiveRoom } from '@/lib/mock';
 
 import { inputStyle } from './AuthForm';
+import { GiftOverlay, GiftSheet, TopGiftersPill, TopGiftersSheet, useGiftFeed } from './LiveGifts';
 import { LiveVideo, type LiveVideoStatus } from './LiveVideo';
 
 export function LiveRoomView({ room, onClose }: { room: LiveRoom | null; onClose: () => void }) {
@@ -210,6 +211,9 @@ function Room({ room, onClose }: { room: LiveRoom; onClose: () => void }) {
   const m = real ? realModel : demoModel;
   const [chatInput, setChatInput] = useState('');
   const [videoStatus, setVideoStatus] = useState<LiveVideoStatus | null>(null);
+  const feed = useGiftFeed(room.id, real);
+  const [giftOpen, setGiftOpen] = useState(false);
+  const [topOpen, setTopOpen] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
   const ended = m.status === 'ended';
   const isHost = !!room.isSelf;
@@ -272,6 +276,7 @@ function Room({ room, onClose }: { room: LiveRoom; onClose: () => void }) {
           </Txt>
         </View>
         <View style={{ flex: 1 }} />
+        <TopGiftersPill top={feed.top} onPress={() => setTopOpen(true)} />
         {room.host ? <Avatar uri={room.host.photo} name={room.host.name} size={32} ring={T.rose} /> : null}
         {room.guest ? <Avatar uri={room.guest.photo} name={room.guest.name} size={32} ring={T.violet} style={{ marginLeft: -14 }} /> : null}
       </View>
@@ -355,6 +360,11 @@ function Room({ room, onClose }: { room: LiveRoom; onClose: () => void }) {
           <Pressable onPress={sendChat} disabled={ended} style={styles.roundGlass}>
             <Send size={16} color="#fff" />
           </Pressable>
+          {!isHost && !ended ? (
+            <Pressable onPress={() => setGiftOpen(true)} accessibilityRole="button" accessibilityLabel="Send a gift" style={[styles.roundGlass, { backgroundColor: T.amber }]}>
+              <GiftIcon size={18} color="#1a1a1a" />
+            </Pressable>
+          ) : null}
           <Pressable onPress={m.react} disabled={ended} style={[styles.roundGlass, { backgroundColor: T.rose }]}>
             <Heart size={18} color="#fff" fill="#fff" />
             {m.reactions > 0 ? (
@@ -367,6 +377,20 @@ function Room({ room, onClose }: { room: LiveRoom; onClose: () => void }) {
           </Pressable>
         </View>
       </View>
+      <GiftOverlay show={feed.current} onDone={feed.done} />
+      <GiftSheet
+        visible={giftOpen}
+        onClose={() => setGiftOpen(false)}
+        streamId={room.id}
+        real={real}
+        gifts={feed.gifts}
+        hostName={room.host?.name ?? 'the host'}
+        onSent={(g) => {
+          feed.enqueue(g);
+          feed.refreshTop();
+        }}
+      />
+      <TopGiftersSheet visible={topOpen} onClose={() => setTopOpen(false)} top={feed.top} />
     </KeyboardAvoidingView>
   );
 }

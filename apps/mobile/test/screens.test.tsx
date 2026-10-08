@@ -186,3 +186,46 @@ describe('calls (Expo Go runtime)', () => {
     expect(errors).toEqual([]);
   });
 });
+
+describe('wallet + gifts (Expo Go runtime)', () => {
+  beforeEach(() => {
+    state.signedIn = true;
+    state.onboarded = true;
+  });
+  async function settle() {
+    for (let i = 0; i < 6; i++) {
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(50);
+      });
+    }
+  }
+
+  test('wallet shows balance, disabled packs and no cash-out', async () => {
+    const view = await open('/profile');
+    await act(async () => {
+      fireEvent.press(view.getByText('Wallet · MATCH coins'));
+    });
+    await settle();
+    expect(view.getByText('42')).toBeTruthy();
+    expect(view.getByText('1,200 coins')).toBeTruthy();
+    expect(view.getByText(/Coin packs (can be bought in the installed MATCH app|open as soon as the store is connected)/)).toBeTruthy();
+    expect(view.getByText(/payouts coming soon/)).toBeTruthy();
+    expect(errors).toEqual([]);
+  });
+
+  test('gift sheet opens from a real live', async () => {
+    const view = await open('/live');
+    await act(async () => {
+      fireEvent.press(view.getByText('Rooftop sunset talk'));
+    });
+    await settle();
+    await act(async () => {
+      fireEvent.press(view.getByLabelText('Send a gift'));
+    });
+    await settle();
+    expect(view.getByText('Send Bruno a gift')).toBeTruthy();
+    expect(view.getByText('Crown')).toBeTruthy();
+    expect(view.getByText('42 coins')).toBeTruthy();
+    expect(errors).toEqual([]);
+  });
+});

@@ -178,3 +178,46 @@ export function fallbackPrice(id: EntitlementId): string {
   return FALLBACK_PRICE[id];
 }
 
+
+/* ------------------------------ MATCH coins (consumables) ------------------------------ */
+
+/**
+ * Coin packs are consumables (coins_100 / coins_550 / coins_1200). The balance is
+ * credited ONLY by the revenuecat-webhook (NON_RENEWING_PURCHASE, idempotent per
+ * store transaction) — the app never writes coins. Disabled in Expo Go (Preview
+ * Mode would only simulate) and when no RevenueCat key is set.
+ */
+export function coinPurchaseStatus(): { enabled: boolean; message: string } {
+  if (isExpoGo()) return { enabled: false, message: 'Coin packs can be bought in the installed MATCH app.' };
+  if (!apiKey()) return { enabled: false, message: 'Coin packs open as soon as the store is connected.' };
+  return { enabled: true, message: '' };
+}
+
+export async function fetchCoinPrices(productIds: string[]): Promise<Record<string, string>> {
+  if (!coinPurchaseStatus().enabled || !productIds.length) return {};
+  try {
+    if (!(await Purchases.isConfigured())) return {};
+    const category = (Purchases as unknown as { PRODUCT_CATEGORY?: { NON_SUBSCRIPTION?: string } }).PRODUCT_CATEGORY?.NON_SUBSCRIPTION;
+    const products = await Purchases.getProducts(productIds, category as never);
+    return Object.fromEntries(products.map((p) => [p.identifier, p.priceString]));
+  } catch {
+    return {};
+  }
+}
+
+export async function purchaseCoinPack(productId: string): Promise<{ ok: true } | { ok: false; error: string; cancelled?: boolean }> {
+  const status = coinPurchaseStatus();
+  if (!status.enabled) return { ok: false, error: status.message };
+  try {
+    if (!(await Purchases.isConfigured())) return { ok: false, error: 'Purchases SDK is not ready. Sign in and try again.' };
+    const category = (Purchases as unknown as { PRODUCT_CATEGORY?: { NON_SUBSCRIPTION?: string } }).PRODUCT_CATEGORY?.NON_SUBSCRIPTION;
+    const [product] = await Purchases.getProducts([productId], category as never);
+    if (!product) return { ok: false, error: 'This coin pack is not in the store yet.' };
+    await Purchases.purchaseStoreProduct(product);
+    return { ok: true };
+  } catch (e: unknown) {
+    const err = e as { userCancelled?: boolean; code?: string; message?: string };
+    if (err?.userCancelled || err?.code === PURCHASES_ERROR_CODE.PURCHASE_CANCELLED_ERROR) return { ok: false, error: 'Purchase cancelled', cancelled: true };
+    return { ok: false, error: err?.message || 'Purchase failed' };
+  }
+}

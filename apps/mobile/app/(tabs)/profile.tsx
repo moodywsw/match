@@ -1,10 +1,11 @@
 import { useFocusEffect, useRouter } from 'expo-router';
-import { Camera, ChevronRight, Crown, LogOut, Pencil, Plus, Settings, Sparkles, Star } from 'lucide-react-native';
+import { Camera, ChevronRight, Coins, Crown, LogOut, Pencil, Plus, Settings, Sparkles, Star } from 'lucide-react-native';
 import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Image, Pressable, ScrollView, View } from 'react-native';
 
 import { FridayCard } from '@/components/app/FridayCard';
 import { EditProfileSheet, ProfileGradientButton, SettingsSheet } from '@/components/app/ProfileSheets';
+import { WalletSheet } from '@/components/app/WalletSheet';
 import { Screen } from '@/components/app/Screen';
 import { Avatar, Chip, FadeUp, MatchRing, SafetyLink, SectionTitle, StatCard, Tag, VerifiedIcon } from '@/components/ui/primitives';
 import { Txt } from '@/components/ui/Txt';
@@ -33,6 +34,7 @@ export default function ProfileTab() {
   const [uploading, setUploading] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
+  const [showWallet, setShowWallet] = useState(false);
   const [localVerified, setLocalVerified] = useState(false);
 
   const loadPhotos = useCallback(async () => {
@@ -213,6 +215,7 @@ export default function ProfileTab() {
           <Sparkles size={18} color="#fff" />
         </ProfileGradientButton>
 
+        <SafetyLink icon={<Coins size={16} color={T.amber} />} label="Wallet · MATCH coins" onPress={() => setShowWallet(true)} trailing={<ChevronRight size={15} color={T.mutedDim} />} />
         <SafetyLink icon={<Sparkles size={16} color={T.text} />} label="View your social posts" onPress={() => router.navigate('/(tabs)/social')} trailing={<ChevronRight size={15} color={T.mutedDim} />} />
         <SafetyLink icon={<Settings size={16} color={T.text} />} label="Settings & privacy" onPress={() => setShowSettings(true)} trailing={<ChevronRight size={15} color={T.mutedDim} />} />
         <SafetyLink icon={<LogOut size={16} color={T.rose} />} label="Sign out" color={T.rose} onPress={() => void signOut()} />
@@ -229,6 +232,7 @@ export default function ProfileTab() {
         }}
       />
       <EditProfileSheet visible={showEdit} onClose={() => setShowEdit(false)} />
+      <WalletSheet visible={showWallet} onClose={() => setShowWallet(false)} />
     </Screen>
   );
 }

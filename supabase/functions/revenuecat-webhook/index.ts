@@ -17,6 +17,13 @@ import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
  * events re-sync the receiving user's entitlements from the RevenueCat REST API.
  *
  * The app sets the RevenueCat appUserID to the Supabase auth user id (uuid).
+ *
+ * MATCH coins (consumables coins_100 / coins_550 / coins_1200, listed in
+ * public.coin_packs) are handled before the subscription logic:
+ *   NON_RENEWING_PURCHASE → public.credit_coin_purchase (idempotent per store transaction id)
+ *   CANCELLATION (refund)  → public.reverse_coin_purchase (claws back what is left)
+ * Both are SECURITY DEFINER functions executable by service_role only, so the
+ * coin balance can never be raised by a client.
  */
 
 type RcEvent = {
@@ -195,6 +202,43 @@ async function handleTransfer(admin: SupabaseClient, ev: RcEvent, eventAt: strin
   return { expired: from.length, synced };
 }
 
+/** Coin packs (consumables). Never touches subscriptions. */
+async function handleCoins(admin: SupabaseClient, ev: RcEvent, userId: string) {
+  const storeTx = ev.transaction_id || ev.original_transaction_id || `rc_event:${ev.id}`;
+  if (ev.type === "NON_RENEWING_PURCHASE") {
+    const { data, error } = await admin.rpc("credit_coin_purchase", {
+      p_user: userId,
+      p_product_id: ev.product_id,
+      p_store_tx: storeTx,
+      p_env: ev.environment ?? null,
+    });
+    if (error) throw error;
+    if (typeof ev.price_in_purchased_currency === "number") {
+      const { error: payErr } = await admin.from("payments").upsert(
+        {
+          user_id: userId,
+          subscription_id: null,
+          amount_cents: Math.round(ev.price_in_purchased_currency * 100),
+          currency: (ev.currency ?? "EUR").toUpperCase(),
+          store_transaction_id: storeTx,
+          product_id: ev.product_id ?? null,
+          environment: ev.environment ?? null,
+          event_id: ev.id,
+        },
+        { onConflict: "store_transaction_id", ignoreDuplicates: true },
+      );
+      if (payErr) throw payErr;
+    }
+    return { ok: true, coins: data };
+  }
+  if (ev.type === "CANCELLATION") {
+    const { data, error } = await admin.rpc("reverse_coin_purchase", { p_store_tx: storeTx });
+    if (error) throw error;
+    return { ok: true, reversal: data };
+  }
+  return { ok: true, ignored: `coins:${ev.type}` };
+}
+
 Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
 
@@ -227,6 +271,15 @@ Deno.serve(async (req) => {
     // Anonymous RevenueCat ids ($RCAnonymousID:…) or deleted users: acknowledge
     // so RevenueCat does not retry forever.
     if (!userId) return json({ ok: true, ignored: "unknown_app_user" });
+
+    if (ev.product_id) {
+      const { data: pack } = await admin
+        .from("coin_packs")
+        .select("product_id")
+        .eq("product_id", ev.product_id)
+        .maybeSingle();
+      if (pack) return json(await handleCoins(admin, ev, userId));
+    }
 
     let status: Status | null = null;
     let willRenew: boolean | null = null;
