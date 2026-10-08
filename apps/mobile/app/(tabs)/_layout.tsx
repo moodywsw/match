@@ -11,7 +11,7 @@ type NavLike = {
 };
 
 function Header({ navigation }: { navigation: NavLike }) {
-  const { me, openNotifications } = useApp();
+  const { me, openNotifications, unreadCount } = useApp();
   const history = navigation.getState()?.history ?? [];
   return (
     <TopBar
@@ -22,6 +22,7 @@ function Header({ navigation }: { navigation: NavLike }) {
       onAvatar={() => navigation.navigate('profile')}
       photo={me?.photo ?? null}
       name={me?.name ?? ''}
+      unread={unreadCount}
     />
   );
 }

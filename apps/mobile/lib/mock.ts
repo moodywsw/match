@@ -183,12 +183,17 @@ export const CHAT_PREVIEWS = [
   'What time works for you on Friday?',
 ];
 
-export type StoryFrame =
-  | { type: 'photo'; image: string; caption?: string }
-  | { type: 'question'; question: string; bg: [string, string] }
-  | { type: 'poll'; question: string; options: string[]; bg: [string, string] };
+/** id/createdAt are set for real (Supabase) frames only. */
+type FrameMeta = { id?: string; createdAt?: string };
+export type StoryFrame = FrameMeta &
+  (
+    | { type: 'photo'; image: string | null; caption?: string }
+    | { type: 'text'; text: string; bg: [string, string] }
+    | { type: 'question'; question: string; bg: [string, string] }
+    | { type: 'poll'; question: string; options: string[]; bg: [string, string] }
+  );
 
-export type StoryUser = { id: string; name: string; photo: string | null; frames: StoryFrame[] };
+export type StoryUser = { id: string; name: string; photo: string | null; frames: StoryFrame[]; real?: boolean; isMe?: boolean; seen?: boolean };
 
 export const STORY_USERS: StoryUser[] = PROFILES.slice(0, 8).map((p, i) => ({
   id: p.id,

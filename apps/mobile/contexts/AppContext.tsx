@@ -12,7 +12,8 @@ import { personFromDiscover, type Me } from '@/lib/compat';
 import { fetchInterestLabelsForUsers } from '@/lib/interests';
 import { DEMO_MATCHED_IDS, PROFILES, SHOW_DEMO_CONTENT, type Person } from '@/lib/mock';
 import { ageFromBirthDate, fetchDiscoverDeck, fetchPrimaryPhotos, sendLike } from '@/lib/profile';
-import { notifyUserPush } from '@/lib/push';
+import { fetchInbox, inboxIcon, inboxText, markAllRead, subscribeInbox, timeAgo, type InboxItem } from '@/lib/inbox';
+import { pushLatestNotification } from '@/lib/push';
 
 type MatchState = { data: MatchOverlayData; person: Person; matchId: string | null };
 
@@ -37,6 +38,9 @@ type AppContextValue = {
   toast: (msg: string) => void;
   openNotifications: () => void;
   openPremium: () => void;
+  /** Real notifications (DB triggers) + unread badge count. */
+  inbox: InboxItem[];
+  unreadCount: number;
 };
 
 const Ctx = createContext<AppContextValue | undefined>(undefined);
@@ -158,12 +162,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const { match: row } = await sendLike(user.id, p.id, !!opts?.superLike);
         if (row) {
           setMatch({ data: overlay, person: p, matchId: row.id });
-          void notifyUserPush({
-            userId: p.id,
-            title: "It's a MATCH! 🔥",
-            body: `You and ${profile?.name || 'someone'} liked each other`,
-            data: { type: 'match', matchId: row.id },
-          });
+          void pushLatestNotification(p.id);
         } else {
           toast(opts?.superLike ? `Super like sent to ${p.name} ⭐` : `Like sent to ${p.name} 💫`);
         }
@@ -204,7 +203,62 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, [match, router, toast]);
 
-  const notifItems: NotifItem[] = [];
+  /* ---------- notifications inbox (realtime) ---------- */
+  const [inbox, setInbox] = useState<InboxItem[]>([]);
+  useEffect(() => {
+    if (!user?.id) {
+      setInbox([]);
+      return;
+    }
+    let alive = true;
+    fetchInbox(user.id)
+      .then((items) => alive && setInbox(items))
+      .catch((e) => console.warn('[match] inbox load failed', e));
+    const unsub = subscribeInbox(user.id, (item) => {
+      setInbox((prev) => [item, ...prev.filter((x) => x.id !== item.id)].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 80));
+    });
+    return () => {
+      alive = false;
+      unsub();
+    };
+  }, [user?.id]);
+  const unreadCount = useMemo(() => inbox.filter((n) => !n.readAt).length, [inbox]);
+
+  const closeNotifications = useCallback(() => {
+    setNotifOpen(false);
+    if (!user?.id || !inbox.some((n) => !n.readAt)) return;
+    const now = new Date().toISOString();
+    setInbox((prev) => prev.map((n) => (n.readAt ? n : { ...n, readAt: now })));
+    markAllRead(user.id).catch((e) => console.warn('[match] mark read failed', e));
+  }, [user?.id, inbox]);
+
+  const openInboxItem = useCallback(
+    async (n: InboxItem) => {
+      closeNotifications();
+      try {
+        if (n.type === 'message' && typeof n.payload.conversation_id === 'string') {
+          router.push({ pathname: '/chat/[conversationId]', params: { conversationId: n.payload.conversation_id } });
+        } else if (n.type === 'match' && typeof n.payload.match_id === 'string') {
+          const convId = await ensureConversation(n.payload.match_id);
+          router.push({ pathname: '/chat/[conversationId]', params: { conversationId: convId } });
+        } else {
+          router.navigate('/(tabs)/social');
+        }
+      } catch (err) {
+        toast(err instanceof Error ? err.message : 'Could not open');
+      }
+    },
+    [closeNotifications, router, toast]
+  );
+
+  const notifItems: NotifItem[] = inbox.map((n) => ({
+    id: n.id,
+    icon: inboxIcon(n.type),
+    text: inboxText(n),
+    time: timeAgo(n.createdAt),
+    unread: !n.readAt,
+    onPress: () => void openInboxItem(n),
+  }));
 
   const value = useMemo<AppContextValue>(
     () => ({
@@ -225,15 +279,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       toast,
       openNotifications: () => setNotifOpen(true),
       openPremium: () => setPremiumOpen(true),
+      inbox,
+      unreadCount,
     }),
-    [me, refreshMe, people, peopleLoading, peopleError, reloadPeople, personById, likedIds, passedIds, demoMatchedIds, like, pass, removePerson, resetDeck, toast]
+    [me, refreshMe, people, peopleLoading, peopleError, reloadPeople, personById, likedIds, passedIds, demoMatchedIds, like, pass, removePerson, resetDeck, toast, inbox, unreadCount]
   );
 
   return (
     <Ctx.Provider value={value}>
       {children}
       <MatchOverlay data={match?.data ?? null} onClose={() => setMatch(null)} onMessage={onMatchMessage} />
-      <NotificationsPanel visible={notifOpen} onClose={() => setNotifOpen(false)} items={notifItems} />
+      <NotificationsPanel visible={notifOpen} onClose={closeNotifications} items={notifItems} demoFallback={SHOW_DEMO_CONTENT} />
       <PremiumModal visible={premiumOpen} onClose={() => setPremiumOpen(false)} toast={toast} />
       {toastMsg ? (
         <View pointerEvents="none" style={styles.toastWrap}>

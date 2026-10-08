@@ -9,6 +9,7 @@ export type Profile = {
   city: string | null;
   bio: string | null;
   intention: string | null;
+  friday_answer?: string | null;
   verified: boolean;
   is_discoverable: boolean;
   onboarding_complete: boolean;
@@ -70,7 +71,7 @@ export async function fetchOwnProfile(userId: string): Promise<Profile | null> {
   const { data, error } = await supabase
     .from('profiles')
     .select(
-      'id, name, birth_date, gender, city, bio, intention, verified, is_discoverable, onboarding_complete, created_at, updated_at'
+      'id, name, birth_date, gender, city, bio, intention, friday_answer, verified, is_discoverable, onboarding_complete, created_at, updated_at'
     )
     .eq('id', userId)
     .maybeSingle();
@@ -94,7 +95,7 @@ export async function upsertOwnProfile(
     .from('profiles')
     .upsert(payload, { onConflict: 'id' })
     .select(
-      'id, name, birth_date, gender, city, bio, intention, verified, is_discoverable, onboarding_complete, created_at, updated_at'
+      'id, name, birth_date, gender, city, bio, intention, friday_answer, verified, is_discoverable, onboarding_complete, created_at, updated_at'
     )
     .single();
   if (error) throw error;

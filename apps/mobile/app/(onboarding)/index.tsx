@@ -142,6 +142,7 @@ export default function OnboardingScreen() {
         birth_date: defaultBirthDate(Number(age)),
         city: city.trim() || null,
         intention: intention ?? 'figuring_out',
+        friday_answer: friday,
         onboarding_complete: true,
         is_discoverable: true,
       });

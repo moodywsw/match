@@ -50,6 +50,7 @@ export function TopBar({
   onAvatar,
   photo,
   name,
+  unread = 0,
 }: {
   canGoBack: boolean;
   onBack: () => void;
@@ -58,6 +59,7 @@ export function TopBar({
   onAvatar: () => void;
   photo: string | null;
   name: string;
+  unread?: number;
 }) {
   const insets = useSafeAreaInsets();
   return (
@@ -77,6 +79,13 @@ export function TopBar({
           </IconBtn>
           <IconBtn onPress={onBell}>
             <Bell size={18} color={T.text} />
+            {unread > 0 ? (
+              <View style={styles.badge}>
+                <Txt w={700} size={9} color="#fff">
+                  {unread > 9 ? '9+' : unread}
+                </Txt>
+              </View>
+            ) : null}
           </IconBtn>
           <Pressable onPress={onAvatar} hitSlop={6}>
             <Avatar uri={photo} name={name} size={34} ring={T.rose} />
@@ -128,6 +137,7 @@ export function BottomNav({ active, onTab, onCreate }: { active: string; onTab: 
 }
 
 const styles = StyleSheet.create({
+  badge: { position: 'absolute', top: -3, right: -3, minWidth: 16, height: 16, paddingHorizontal: 4, borderRadius: 8, backgroundColor: T.rose, borderWidth: 2, borderColor: T.ink, alignItems: 'center', justifyContent: 'center' },
   top: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 40, borderBottomWidth: 1, borderBottomColor: T.border },
   topRow: { height: TOP_BAR_H, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 18 },
   bottom: { position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 50, borderTopWidth: 1, borderTopColor: T.border },

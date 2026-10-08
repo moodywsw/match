@@ -13,8 +13,10 @@ import { Txt } from '@/components/ui/Txt';
 import { T, body } from '@/constants/theme';
 import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
+import { pushLatestNotification } from '@/lib/push';
 import { addComment, createTextPost, fetchComments, fetchFeed, togglePostLike, type FeedPost } from '@/lib/feed';
-import { POSTS, PROFILES, SHOW_DEMO_CONTENT, STORY_USERS, type StoryFrame, type StoryUser } from '@/lib/mock';
+import { POSTS, PROFILES, SHOW_DEMO_CONTENT, STORY_USERS, type StoryUser } from '@/lib/mock';
+import { createStory, fetchStoryUsers, type NewStory } from '@/lib/stories';
 import { reportUser } from '@/lib/safety';
 
 type UiPost = {
@@ -74,14 +76,24 @@ export default function SocialTab() {
   const [voted, setVoted] = useState<Record<string, number>>({});
   const [hidden, setHidden] = useState<Record<string, boolean>>({});
   const [storyIndex, setStoryIndex] = useState<number | null>(null);
-  const [myStory, setMyStory] = useState<StoryUser | null>(null);
+  const [realStories, setRealStories] = useState<StoryUser[]>([]);
   const [showCreateStory, setShowCreateStory] = useState(false);
   const [seen, setSeen] = useState<string[]>([]);
   const [menuId, setMenuId] = useState<string | null>(null);
   const [commentsFor, setCommentsFor] = useState<UiPost | null>(null);
 
+  const loadStories = useCallback(async () => {
+    if (!user?.id) return;
+    try {
+      setRealStories(await fetchStoryUsers(user.id));
+    } catch (err) {
+      console.warn('[match] stories load failed', err);
+    }
+  }, [user?.id]);
+
   const load = useCallback(async () => {
     if (!user?.id) return;
+    void loadStories();
     try {
       setRealPosts(await fetchFeed(user.id));
     } catch (err) {
@@ -156,6 +168,7 @@ export default function SocialTab() {
     setRealPosts((prev) => prev.map((x) => (x.id === p.id ? { ...x, likedByMe: !x.likedByMe, likeCount: x.likedByMe ? Math.max(0, x.likeCount - 1) : x.likeCount + 1 } : x)));
     try {
       await togglePostLike(p.id, user.id, p.liked);
+      if (!p.liked) void pushLatestNotification(p.authorId);
     } catch (err) {
       setRealPosts((prev) => prev.map((x) => (x.id === p.id ? { ...x, likedByMe: p.liked, likeCount: p.likes } : x)));
       toast(err instanceof Error ? err.message : 'Like failed');
@@ -167,7 +180,9 @@ export default function SocialTab() {
     setSaves((s) => ({ ...s, [id]: !s[id] }));
   };
 
-  const allStoryUsers = myStory ? [myStory, ...STORY_USERS] : STORY_USERS;
+  const myStory = realStories.find((u) => u.isMe) ?? null;
+  const otherStories = [...realStories.filter((u) => !u.isMe), ...(SHOW_DEMO_CONTENT ? STORY_USERS : [])];
+  const allStoryUsers = myStory ? [myStory, ...otherStories] : otherStories;
   const myName = profile?.name || 'You';
 
   return (
@@ -175,24 +190,22 @@ export default function SocialTab() {
       <FadeUp>
         {/* stories */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -18, marginBottom: 14 }} contentContainerStyle={{ gap: 16, paddingHorizontal: 18 }}>
-          <Pressable onPress={() => (myStory ? setStoryIndex(0) : setShowCreateStory(true))} style={{ alignItems: 'center', gap: 4 }}>
+          <Pressable onPress={() => (myStory ? setStoryIndex(0) : setShowCreateStory(true))} onLongPress={() => setShowCreateStory(true)} style={{ alignItems: 'center', gap: 4 }}>
             <View style={{ width: 56, height: 56 }}>
               <View style={{ width: 56, height: 56, borderRadius: 28, borderWidth: 2, borderStyle: myStory ? 'solid' : 'dashed', borderColor: myStory ? T.mint : 'rgba(255,255,255,0.25)', padding: 2 }}>
                 <Avatar uri={me?.photo} name={myName} size={48} />
               </View>
-              {!myStory ? (
-                <View style={{ position: 'absolute', bottom: -2, right: -2, width: 18, height: 18, borderRadius: 9, backgroundColor: T.rose, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: T.ink }}>
-                  <Plus size={11} color="#fff" />
-                </View>
-              ) : null}
+              <Pressable onPress={() => setShowCreateStory(true)} hitSlop={8} style={{ position: 'absolute', bottom: -2, right: -2, width: 18, height: 18, borderRadius: 9, backgroundColor: T.rose, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: T.ink }}>
+                <Plus size={11} color="#fff" />
+              </Pressable>
             </View>
             <Txt size={10} color={T.muted}>
               Your story
             </Txt>
           </Pressable>
-          {STORY_USERS.map((p, i) => (
+          {otherStories.map((p, i) => (
             <Pressable key={p.id} onPress={() => setStoryIndex(i + (myStory ? 1 : 0))} style={{ alignItems: 'center', gap: 4 }}>
-              <StoryRing size={56} seen={seen.includes(p.id)}>
+              <StoryRing size={56} seen={!!p.seen || seen.includes(p.id)}>
                 <Avatar uri={p.photo} name={p.name} size={48} style={{ borderWidth: 2, borderColor: T.ink }} />
               </StoryRing>
               <Txt size={10} color={T.muted}>
@@ -328,14 +341,31 @@ export default function SocialTab() {
         </View>
       </FadeUp>
 
-      <StoryViewer users={allStoryUsers} startIndex={storyIndex} onClose={() => setStoryIndex(null)} onViewed={(id) => setSeen((s) => (s.includes(id) ? s : [...s, id]))} toast={toast} />
+      <StoryViewer
+        users={allStoryUsers}
+        startIndex={storyIndex}
+        onClose={() => {
+          setStoryIndex(null);
+          void loadStories();
+        }}
+        onViewed={(id) => setSeen((s) => (s.includes(id) ? s : [...s, id]))}
+        toast={toast}
+        meId={user?.id}
+        onDeleted={loadStories}
+      />
       <CreateStorySheet
         visible={showCreateStory}
         onClose={() => setShowCreateStory(false)}
-        onCreate={(frame: StoryFrame) => {
-          setMyStory({ id: 'me', name: 'You', photo: me?.photo ?? null, frames: [frame] });
-          setShowCreateStory(false);
-          toast('Your story is live for 24h ✨');
+        onCreate={async (story: NewStory) => {
+          if (!user?.id) return;
+          try {
+            await createStory(user.id, story);
+            setShowCreateStory(false);
+            toast('Your story is live for 24h ✨');
+            await loadStories();
+          } catch (err) {
+            toast(err instanceof Error ? err.message : 'Could not share story');
+          }
         }}
       />
       <CommentsSheet
@@ -391,6 +421,7 @@ function CommentsSheet({ post, onClose, onAdded }: { post: UiPost | null; onClos
     if (!user?.id) return;
     try {
       await addComment(post.id, user.id, text);
+      void pushLatestNotification(post.authorId);
       onAdded(post.id);
       await loadComments();
     } catch (err) {

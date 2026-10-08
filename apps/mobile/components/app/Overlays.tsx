@@ -1,6 +1,6 @@
 import { Check, Crown, Eye, EyeOff, RotateCcw, X, Zap } from 'lucide-react-native';
 import { useState, type ReactNode } from 'react';
-import { Pressable, View } from 'react-native';
+import { Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CenterModal, Sheet } from '@/components/ui/Sheet';
@@ -10,11 +10,11 @@ import { T } from '@/constants/theme';
 import { purchaseEntitlement, type EntitlementId } from '@/lib/iap';
 import { NOTIFS } from '@/lib/mock';
 
-export type NotifItem = { icon: string; text: string; time: string };
+export type NotifItem = { id?: string; icon: string; text: string; time: string; unread?: boolean; onPress?: () => void };
 
-export function NotificationsPanel({ visible, onClose, items }: { visible: boolean; onClose: () => void; items: NotifItem[] }) {
+export function NotificationsPanel({ visible, onClose, items, demoFallback = true }: { visible: boolean; onClose: () => void; items: NotifItem[]; demoFallback?: boolean }) {
   const insets = useSafeAreaInsets();
-  const list = items.length ? items : NOTIFS;
+  const list: NotifItem[] = items.length ? items : demoFallback ? NOTIFS : [];
   return (
     <CenterModal visible={visible} onClose={onClose} top={insets.top + 60} style={{ width: '94%', maxWidth: 460, maxHeight: '78%', padding: 20, borderRadius: 24 }}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
@@ -25,17 +25,31 @@ export function NotificationsPanel({ visible, onClose, items }: { visible: boole
           <X size={16} color={T.text} />
         </IconBtn>
       </View>
-      {list.map((n, i) => (
-        <View key={i} style={{ flexDirection: 'row', gap: 12, paddingVertical: 10, paddingHorizontal: 4, borderBottomWidth: i < list.length - 1 ? 1 : 0, borderBottomColor: T.border }}>
-          <Txt size={18}>{n.icon}</Txt>
-          <Txt size={13} style={{ flex: 1 }}>
-            {n.text}
+      <ScrollView showsVerticalScrollIndicator={false} style={{ flexGrow: 0 }}>
+        {list.length === 0 ? (
+          <Txt size={13} color={T.muted} center style={{ paddingVertical: 18 }}>
+            Nothing yet — likes, matches and messages will show up here.
           </Txt>
-          <Txt size={11} color={T.mutedDim}>
-            {n.time}
-          </Txt>
-        </View>
-      ))}
+        ) : null}
+        {list.map((n, i) => (
+          <Pressable
+            key={n.id ?? i}
+            onPress={n.onPress}
+            disabled={!n.onPress}
+            style={({ pressed }) => ({ flexDirection: 'row', gap: 12, paddingVertical: 10, paddingHorizontal: 4, borderBottomWidth: i < list.length - 1 ? 1 : 0, borderBottomColor: T.border, opacity: pressed ? 0.7 : 1 })}>
+            <Txt size={18}>{n.icon}</Txt>
+            <Txt size={13} w={n.unread ? 600 : 400} style={{ flex: 1 }}>
+              {n.text}
+            </Txt>
+            <View style={{ alignItems: 'flex-end', gap: 6 }}>
+              <Txt size={11} color={T.mutedDim}>
+                {n.time}
+              </Txt>
+              {n.unread ? <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: T.rose }} /> : null}
+            </View>
+          </Pressable>
+        ))}
+      </ScrollView>
     </CenterModal>
   );
 }
