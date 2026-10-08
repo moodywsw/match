@@ -12,7 +12,7 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
  * Notification mode — body `{ "notification_for": "<user_id>" }`:
  *    pushes the newest un-pushed public.notifications row (≤ 2 min old) whose
  *    user_id is the target and whose actor_id is the caller. The row is written
- *    by DB triggers (match, message, post_like, comment, story_reply), so the
+ *    by DB triggers (match, message, post_like, comment, story_reply, super_like), so the
  *    caller cannot forge content: title/body are built here from that row.
  *
  * Expo Push API accepts ExponentPushToken[...] without an Expo account secret.
@@ -236,6 +236,8 @@ function describe(n: NotificationRow, actorName: string): { title: string; body:
       return { title: "MATCH", body: preview ? `${actorName} commented: ${preview}` : `${actorName} commented on your post` };
     case "story_reply":
       return { title: "MATCH", body: preview ? `${actorName} replied to your story: ${preview}` : `${actorName} replied to your story` };
+    case "super_like":
+      return { title: "⭐ Super like", body: `${actorName} super liked you — they'll be first in your Discover` };
     default:
       return { title: "MATCH", body: "You have a new notification" };
   }
