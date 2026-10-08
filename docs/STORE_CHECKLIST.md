@@ -5,16 +5,16 @@ This list is what still needs the owner's accounts, secrets, or decisions.
 Tick items as you go.
 
 Project facts: Expo SDK 57 · EAS project `ec207fec-1ece-43a1-b5ef-d4383bc933f3` (owner `moidys-team`) ·
-bundle id / package `com.match.app` · Supabase project `pkpdheytmbwvqhpcaigm`.
+bundle id / package `com.moidy.match` · Supabase project `pkpdheytmbwvqhpcaigm`.
 
 ---
 
 ## 0. Decide the identifiers (before anything else)
 
-- [ ] Check that `com.match.app` is available on **both** App Store Connect and Google Play.
-      It is generic and may already be taken. If it is, pick something like `com.moidy.match`
-      and change `ios.bundleIdentifier` and `android.package` in `apps/mobile/app.config.ts`.
-      **The identifier can't be changed after the first store upload.**
+- [x] Identifier: `com.moidy.match` (changed from the generic `com.match.app` before any store
+      upload). It is set as `ios.bundleIdentifier` and `android.package` in
+      `apps/mobile/app.config.ts`. **It can't be changed after the first store upload.** The
+      URL scheme stays `match://`.
 - [ ] Final app name. `Match` is almost certainly taken on the App Store, so pick something
       like "MATCH — Dating & Events".
 - [ ] Legal entity (company name, NIF, address). It goes into the privacy policy, the terms,
@@ -97,8 +97,9 @@ except the "why you match" teaser, which is computed on the device.
 
 ## 3. RevenueCat
 
-- [ ] Create the RevenueCat project "MATCH" and add the iOS app (App Store Connect API key +
-      in-app purchase key) and the Android app (service-account JSON).
+- [ ] Create the RevenueCat project "MATCH" and add the iOS app with bundle id `com.moidy.match`
+      (App Store Connect API key + in-app purchase key) and the Android app with package
+      `com.moidy.match` (service-account JSON). RevenueCat apps are tied to these identifiers.
 - [ ] Products: import the 4 store products from steps 1 and 2.
 - [ ] **Entitlements**: the ids must be exactly the following, because the DB and the
       webhook depend on them:
@@ -263,7 +264,7 @@ case, build a new APK instead (`npx eas-cli fingerprint:compare` shows what chan
 
 **Adding Firebase (FCM) later**, needed for Android push delivery. Builds work without it;
 push just isn't delivered.
-1. In the Firebase console, add an Android app with package `com.match.app` and download
+1. In the Firebase console, add an Android app with package `com.moidy.match` and download
    `google-services.json`. Don't commit it.
 2. Make it available to cloud builds as a file variable:
    `npx eas-cli env:create --name GOOGLE_SERVICES_JSON --type file --value ./google-services.json --visibility secret --environment preview --environment production --environment development`.

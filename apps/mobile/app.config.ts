@@ -33,7 +33,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     },
     ios: {
       supportsTablet: true,
-      bundleIdentifier: 'com.match.app',
+      bundleIdentifier: 'com.moidy.match',
       infoPlist: {
         UIBackgroundModes: ['remote-notification'],
         // Only standard HTTPS/TLS is used → exempt from export compliance docs.
@@ -48,7 +48,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         monochromeImage: './assets/images/android-icon-monochrome.png',
       },
       predictiveBackGestureEnabled: false,
-      package: 'com.match.app',
+      package: 'com.moidy.match',
       googleServicesFile: process.env.GOOGLE_SERVICES_JSON || undefined,
     },
     web: {

@@ -73,12 +73,12 @@ Nothing below invents credentials — you create them in Apple / Google / Expo d
    `eas init` writes a real UUID into the project. Put it in env (preferred) or it lands in `extra.eas.projectId` via `EAS_PROJECT_ID` / `EXPO_PUBLIC_EAS_PROJECT_ID` (see `app.config.ts`). Replace the placeholder `replace-after-eas-init`.
 
 2. **Apple Developer Program** (paid) — https://developer.apple.com  
-   - Create App ID / Bundle ID matching `com.match.app` (or change the id in `app.config.ts` first).  
+   - Create App ID / Bundle ID matching `com.moidy.match` (set in `app.config.ts`).  
    - In App Store Connect, create the app; note the numeric **Apple ID** → put in `eas.json` → `submit.production.ios.ascAppId`.  
    - For push: create an **APNs Key** (.p8) in Certificates, Identifiers & Profiles; upload it in Expo credentials (`eas credentials`) — do not commit `.p8` files.
 
 3. **Google Play Console** — https://play.google.com/console  
-   - Create the app with package `com.match.app` (or update `android.package`).  
+   - Create the app with package `com.moidy.match` (`android.package`).  
    - For FCM, follow "Adding Firebase (FCM) later" in `docs/STORE_CHECKLIST.md` §6b: upload `google-services.json` as an EAS file variable `GOOGLE_SERVICES_JSON`, add the FCM V1 key with `eas credentials`, then rebuild.  
    - For `eas submit`: create a Play service account JSON, store as `google-service-account.json` (gitignored); path is referenced in `eas.json`.
 
