@@ -12,8 +12,12 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
  * Notification mode — body `{ "notification_for": "<user_id>" }`:
  *    pushes the newest un-pushed public.notifications row (≤ 2 min old) whose
  *    user_id is the target and whose actor_id is the caller. The row is written
- *    by DB triggers (match, message, post_like, comment, story_reply, super_like), so the
- *    caller cannot forge content: title/body are built here from that row.
+ *    by DB triggers (match, message, post_like, comment, story_reply, super_like,
+ *    story_like), so the caller cannot forge content: title/body are built here from that row.
+ *
+ * Event mode — body `{ "event_notifications": "<event_id>" }`:
+ *    pushes every un-pushed event_update / event_cancelled row (≤ 2 min old) for that
+ *    event whose actor_id is the caller (the event creator) to each attendee.
  *
  * Expo Push API accepts ExponentPushToken[...] without an Expo account secret.
  * Do not put Expo or service-role secrets in git; SUPABASE_* are injected by the runtime.
@@ -22,6 +26,7 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 type PushBody = {
   user_id?: string;
   notification_for?: string;
+  event_notifications?: string;
   title?: string;
   body?: string;
   data?: Record<string, unknown>;
@@ -95,6 +100,17 @@ Deno.serve(async (req: Request) => {
     payload = (await req.json()) as PushBody;
   } catch {
     return json({ error: "Invalid JSON body" }, 400);
+  }
+
+  if (payload.event_notifications) {
+    return await pushEventNotifications(
+      supabaseUrl,
+      serviceKey,
+      anonKey,
+      authHeader,
+      role,
+      payload.event_notifications.trim(),
+    );
   }
 
   if (payload.notification_for) {
@@ -238,6 +254,18 @@ function describe(n: NotificationRow, actorName: string): { title: string; body:
       return { title: "MATCH", body: preview ? `${actorName} replied to your story: ${preview}` : `${actorName} replied to your story` };
     case "super_like":
       return { title: "⭐ Super like", body: `${actorName} super liked you — they'll be first in your Discover` };
+    case "story_like":
+      return { title: "MATCH", body: `${actorName} liked your story` };
+    case "event_update": {
+      const title = typeof n.payload?.title === "string" ? (n.payload.title as string) : "An event";
+      const changes = Array.isArray(n.payload?.changes) ? (n.payload!.changes as string[]) : [];
+      const what = changes.includes("time") ? "new time" : changes.includes("place") ? "new place" : "updated";
+      return { title: `📅 ${title}`, body: `${actorName} changed the event (${what}) — tap for details` };
+    }
+    case "event_cancelled": {
+      const title = typeof n.payload?.title === "string" ? (n.payload.title as string) : "An event";
+      return { title: `❌ ${title}`, body: `${actorName} cancelled this event` };
+    }
     default:
       return { title: "MATCH", body: "You have a new notification" };
   }
@@ -304,4 +332,75 @@ async function pushFromNotification(
   return await sendExpo(
     expoTokens.map((to) => ({ to, title, body, data, sound: "default" as const })),
   );
+}
+
+async function pushEventNotifications(
+  supabaseUrl: string,
+  serviceKey: string,
+  anonKey: string,
+  authHeader: string,
+  role: string,
+  eventId: string,
+): Promise<Response> {
+  if (role !== "authenticated") {
+    return json({ error: "event_notifications requires a user JWT" }, 403);
+  }
+  if (!/^[0-9a-f-]{36}$/i.test(eventId)) return json({ error: "Invalid event id" }, 400);
+  const userClient = createClient(supabaseUrl, anonKey, {
+    global: { headers: { Authorization: authHeader } },
+  });
+  const { data: userData, error: userError } = await userClient.auth.getUser();
+  if (userError || !userData.user) return json({ error: "Invalid user JWT" }, 401);
+  const callerId = userData.user.id;
+  const admin = createClient(supabaseUrl, serviceKey);
+
+  const since = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+  const { data: rows, error } = await admin
+    .from("notifications")
+    .select("id, user_id, actor_id, type, payload")
+    .eq("actor_id", callerId)
+    .in("type", ["event_update", "event_cancelled"])
+    .eq("payload->>event_id", eventId)
+    .is("pushed_at", null)
+    .gte("created_at", since)
+    .limit(500);
+  if (error) return json({ error: error.message }, 500);
+  const pending = (rows ?? []) as NotificationRow[];
+  if (!pending.length) return json({ ok: true, sent: 0, message: "No pending notifications" });
+
+  const { data: claimed, error: claimError } = await admin
+    .from("notifications")
+    .update({ pushed_at: new Date().toISOString() })
+    .in("id", pending.map((n) => n.id))
+    .is("pushed_at", null)
+    .select("id");
+  if (claimError) return json({ error: claimError.message }, 500);
+  const claimedIds = new Set((claimed ?? []).map((c) => c.id as string));
+  const mine = pending.filter((n) => claimedIds.has(n.id));
+  if (!mine.length) return json({ ok: true, sent: 0, message: "Already pushed" });
+
+  const [{ data: actor }, { data: tokens, error: tokenError }] = await Promise.all([
+    admin.from("profiles").select("name").eq("id", callerId).maybeSingle(),
+    admin.from("push_tokens").select("user_id, token").in("user_id", mine.map((n) => n.user_id)),
+  ]);
+  if (tokenError) return json({ error: tokenError.message }, 500);
+  const actorName = (actor?.name as string) || "The host";
+  const byUser = new Map<string, NotificationRow>(mine.map((n) => [n.user_id, n]));
+  const messages: ExpoPushMessage[] = [];
+  for (const t of tokens ?? []) {
+    const n = byUser.get(t.user_id as string);
+    const to = t.token as string;
+    if (!n || !to) continue;
+    const { title, body } = describe(n, actorName);
+    messages.push({ to, title, body, sound: "default", data: { type: n.type, notification_id: n.id, ...(n.payload ?? {}) } });
+  }
+  if (!messages.length) return json({ ok: true, sent: 0, message: "No push_tokens for attendees" });
+  // Expo accepts up to 100 messages per request.
+  let sent = 0;
+  for (let i = 0; i < messages.length; i += 100) {
+    const res = await sendExpo(messages.slice(i, i + 100));
+    if (res.status !== 200) return res;
+    sent += Math.min(100, messages.length - i);
+  }
+  return json({ ok: true, sent });
 }
