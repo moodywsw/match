@@ -33,6 +33,20 @@ export type DiscoverProfile = {
   interests: string[];
   /** false for local demo cards that must not hit public.likes */
   isLive: boolean;
+  /** Has an active boost (30 min at the top of Discover). */
+  boosted?: boolean;
+  /** Super liked the viewer (shown first + highlighted). */
+  superLikedMe?: boolean;
+};
+
+/** Server-side deck filters. Advanced fields are ignored by the RPC for free users. */
+export type DeckFilters = {
+  includePassed?: boolean;
+  maxKm?: number | null;
+  minAge?: number | null;
+  maxAge?: number | null;
+  verifiedOnly?: boolean;
+  intention?: string | null;
 };
 
 export type MatchRow = {
@@ -124,34 +138,6 @@ export async function ensureProfileStub(
   });
 }
 
-async function fetchOutgoingLikedIds(userId: string): Promise<Set<string>> {
-  const { data, error } = await supabase
-    .from('likes')
-    .select('liked_id')
-    .eq('liker_id', userId);
-  if (error) throw error;
-  return new Set((data || []).map((r) => r.liked_id as string));
-}
-
-/**
- * Peer ids blocked either way for the signed-in user.
- * Uses SECURITY DEFINER RPC `get_blocked_peer_ids()` so inbound blocks
- * (where the caller is blocked_id) are visible without widening RLS on `blocks`.
- */
-async function fetchBlockedIds(_userId: string): Promise<Set<string>> {
-  const { data, error } = await supabase.rpc('get_blocked_peer_ids');
-  if (error) {
-    console.warn('[match] get_blocked_peer_ids failed', error.message);
-    // Fallback: outbound blocks only (RLS-visible)
-    const { data: rows } = await supabase
-      .from('blocks')
-      .select('blocked_id')
-      .eq('blocker_id', _userId);
-    return new Set((rows || []).map((r) => r.blocked_id as string));
-  }
-  return new Set((data || []) as string[]);
-}
-
 export async function fetchPrimaryPhotos(
   userIds: string[]
 ): Promise<Record<string, string>> {
@@ -173,45 +159,46 @@ export async function fetchPrimaryPhotos(
 }
 
 /**
- * Load discoverable profiles for the swipe deck.
- * Filters: is_discoverable + onboarding_complete, exclude self / liked / blocked.
+ * Load the swipe deck via the `get_discover_deck` RPC (SECURITY INVOKER, RLS applies).
+ * Server excludes self / liked / passed / blocked / incognito, applies filters
+ * (advanced ones only for MATCH+) and orders super-likers and boosted users first.
  */
 export async function fetchDiscoverDeck(
-  excludeUserId: string,
+  _userId: string,
+  filters: DeckFilters = {},
   limit = 40
 ): Promise<DiscoverProfile[]> {
-  let query = supabase
-    .from('profiles')
-    .select(
-      'id, name, birth_date, city, bio, intention, verified, is_discoverable, approx_lat, approx_lng'
-    )
-    .eq('is_discoverable', true)
-    .eq('onboarding_complete', true)
-    .limit(limit * 2); // over-fetch before client filters
-
-  if (excludeUserId) {
-    query = query.neq('id', excludeUserId);
-  }
-
-  const { data, error } = await query;
+  const { data, error } = await supabase.rpc('get_discover_deck', {
+    p_limit: limit,
+    p_include_passed: !!filters.includePassed,
+    p_max_km: filters.maxKm ?? null,
+    p_min_age: filters.minAge ?? null,
+    p_max_age: filters.maxAge ?? null,
+    p_verified_only: !!filters.verifiedOnly,
+    p_intention: filters.intention ?? null,
+  });
   if (error) throw error;
-
-  const [liked, blocked] = await Promise.all([
-    fetchOutgoingLikedIds(excludeUserId),
-    fetchBlockedIds(excludeUserId),
-  ]);
-
-  const rows = (data || []).filter(
-    (r) => !liked.has(r.id) && !blocked.has(r.id)
-  );
-  const sliced = rows.slice(0, limit);
-  const ids = sliced.map((r) => r.id);
+  type Row = {
+    id: string;
+    name: string;
+    birth_date: string | null;
+    city: string | null;
+    bio: string | null;
+    intention: string | null;
+    verified: boolean | null;
+    approx_lat: number | null;
+    approx_lng: number | null;
+    boosted: boolean | null;
+    super_liked_me: boolean | null;
+  };
+  const rows = (data || []) as Row[];
+  const ids = rows.map((r) => r.id);
   const [photos, interestMap] = await Promise.all([
     fetchPrimaryPhotos(ids),
     fetchInterestLabelsForUsers(ids),
   ]);
 
-  return sliced.map((r) => ({
+  return rows.map((r) => ({
     id: r.id,
     name: r.name,
     birth_date: r.birth_date,
@@ -219,14 +206,22 @@ export async function fetchDiscoverDeck(
     bio: r.bio,
     intention: r.intention,
     verified: !!r.verified,
-    is_discoverable: !!r.is_discoverable,
+    is_discoverable: true,
     approx_lat: r.approx_lat,
     approx_lng: r.approx_lng,
     photoUrl: photos[r.id] ?? null,
     age: ageFromBirthDate(r.birth_date),
     interests: interestMap[r.id] ?? [],
     isLive: true,
+    boosted: !!r.boosted,
+    superLikedMe: !!r.super_liked_me,
   }));
+}
+
+/** Persist a pass server-side (enables rewind + keeps it out of the deck). */
+export async function recordPass(targetId: string): Promise<void> {
+  const { error } = await supabase.rpc('record_pass', { p_target: targetId });
+  if (error) throw error;
 }
 
 export async function findMatchBetween(

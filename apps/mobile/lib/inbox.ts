@@ -1,7 +1,7 @@
 import { fetchPrimaryPhotos } from './profile';
 import { supabase } from './supabase';
 
-export type NotificationType = 'match' | 'message' | 'post_like' | 'comment' | 'story_reply';
+export type NotificationType = 'match' | 'message' | 'post_like' | 'comment' | 'story_reply' | 'super_like';
 
 export type InboxItem = {
   id: string;
@@ -109,6 +109,10 @@ export function inboxIcon(type: NotificationType): string {
       return '💭';
     case 'story_reply':
       return '✨';
+    case 'super_like':
+      return '⭐';
+    default:
+      return '🔔';
   }
 }
 
@@ -128,6 +132,10 @@ export function inboxText(n: InboxItem): string {
       return n.payload.kind === 'answer'
         ? `${n.actorName} answered your question${preview ? `: “${preview}”` : ''}`
         : `${n.actorName} replied to your story${preview ? `: “${preview}”` : ''}`;
+    case 'super_like':
+      return `${n.actorName} super liked you ⭐ — they're first in your Discover`;
+    default:
+      return 'New notification';
   }
 }
 

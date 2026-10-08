@@ -95,6 +95,10 @@ export type Person = {
   badges: string[];
   /** true when backed by a real Supabase profile (likes hit public.likes). */
   real: boolean;
+  /** Active boost — shown at the top of Discover. */
+  boosted?: boolean;
+  /** This person super liked me — pinned first and highlighted. */
+  superLikedMe?: boolean;
 };
 
 const NAMES: [string, number, string][] = [

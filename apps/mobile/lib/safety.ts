@@ -12,7 +12,7 @@ export type ReportCategory = (typeof REPORT_CATEGORIES)[number];
 
 /**
  * Block a user. RLS only lets you insert as blocker.
- * Discover excludes blocked_id for the current user via fetchBlockedIds.
+ * Discover excludes blocked peers (either direction) server-side in get_discover_deck.
  */
 export async function blockUser(blockerId: string, blockedId: string): Promise<void> {
   if (blockerId === blockedId) throw new Error('Cannot block yourself');

@@ -1,5 +1,5 @@
 import Slider from '@react-native-community/slider';
-import { BadgeCheck, Calendar, Check, Heart, Shield, SlidersHorizontal, X } from 'lucide-react-native';
+import { BadgeCheck, Calendar, Check, Heart, Lock, Shield, SlidersHorizontal, X } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
 import { Pressable, TextInput, View } from 'react-native';
 
@@ -15,7 +15,14 @@ import { inputStyle } from './AuthForm';
 import { LinearGradient } from 'expo-linear-gradient';
 
 /* ------------------------------ compatibility ------------------------------ */
+/** Free: overall score + 2 of 7 dimensions + 1 reason (teaser). MATCH+: full breakdown. */
 export function CompatibilitySheet({ profile, onClose }: { profile: Person | null; onClose: () => void }) {
+  const { tier, requirePremium } = useApp();
+  const full = tier !== 'free';
+  const entries = profile ? Object.entries(profile.breakdown) : [];
+  const shown = full ? entries : entries.slice(0, 2);
+  const locked = full ? [] : entries.slice(2);
+  const unlock = () => void requirePremium('match_plus', 'The full breakdown is part of MATCH+');
   return (
     <Sheet visible={!!profile} onClose={onClose} maxHeight="82%">
       {profile ? (
@@ -31,7 +38,7 @@ export function CompatibilitySheet({ profile, onClose }: { profile: Person | nul
               </Txt>
             </View>
           </View>
-          {Object.entries(profile.breakdown).map(([k, v]) => (
+          {shown.map(([k, v]) => (
             <View key={k} style={{ marginBottom: 10 }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
                 <Txt size={12.5} color={T.muted}>
@@ -46,10 +53,31 @@ export function CompatibilitySheet({ profile, onClose }: { profile: Person | nul
               </View>
             </View>
           ))}
+          {locked.length ? (
+            <Pressable onPress={unlock} style={{ marginTop: 2 }}>
+              {locked.map(([k]) => (
+                <View key={k} style={{ marginBottom: 10, opacity: 0.45 }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <Txt size={12.5} color={T.muted}>
+                      {k}
+                    </Txt>
+                    <Lock size={12} color={T.muted} />
+                  </View>
+                  <View style={{ height: 6, borderRadius: 6, backgroundColor: T.surface2 }} />
+                </View>
+              ))}
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'center', marginTop: 4, paddingVertical: 8, paddingHorizontal: 14, borderRadius: 999, borderWidth: 1, borderColor: `${T.rose}66`, backgroundColor: `${T.rose}1A` }}>
+                <Lock size={13} color={T.rose} />
+                <Txt w={700} size={12.5} color={T.rose}>
+                  See all 7 dimensions with MATCH+
+                </Txt>
+              </View>
+            </Pressable>
+          ) : null}
           <Txt w={700} size={13.5} style={{ marginTop: 18, marginBottom: 8 }}>
             Why you match
           </Txt>
-          {profile.why.map((w, i) => (
+          {(full ? profile.why : profile.why.slice(0, 1)).map((w, i) => (
             <View key={i} style={{ flexDirection: 'row', gap: 8, marginVertical: 4 }}>
               <Check size={15} color={T.mint} style={{ marginTop: 1 }} />
               <Txt size={13} style={{ flex: 1 }}>
@@ -57,19 +85,30 @@ export function CompatibilitySheet({ profile, onClose }: { profile: Person | nul
               </Txt>
             </View>
           ))}
-          <Txt w={700} size={13.5} style={{ marginTop: 16, marginBottom: 8 }}>
-            Potential differences
-          </Txt>
-          {profile.diffs.map((d, i) => (
-            <View key={i} style={{ flexDirection: 'row', gap: 8, marginVertical: 4 }}>
-              <Txt size={13} color={T.muted}>
-                •
+          {full ? (
+            <>
+              <Txt w={700} size={13.5} style={{ marginTop: 16, marginBottom: 8 }}>
+                Potential differences
               </Txt>
+              {profile.diffs.map((d, i) => (
+                <View key={i} style={{ flexDirection: 'row', gap: 8, marginVertical: 4 }}>
+                  <Txt size={13} color={T.muted}>
+                    •
+                  </Txt>
+                  <Txt size={13} color={T.muted} style={{ flex: 1 }}>
+                    {d}
+                  </Txt>
+                </View>
+              ))}
+            </>
+          ) : (
+            <Pressable onPress={unlock} style={{ flexDirection: 'row', gap: 8, marginVertical: 4, opacity: 0.6 }}>
+              <Lock size={14} color={T.muted} style={{ marginTop: 2 }} />
               <Txt size={13} color={T.muted} style={{ flex: 1 }}>
-                {d}
+                {Math.max(0, profile.why.length - 1) + profile.diffs.length} more insights & potential differences — MATCH+
               </Txt>
-            </View>
-          ))}
+            </Pressable>
+          )}
           <PrimaryButton label="Close" onPress={onClose} style={{ marginTop: 20 }} />
         </>
       ) : null}
@@ -78,37 +117,101 @@ export function CompatibilitySheet({ profile, onClose }: { profile: Person | nul
 }
 
 /* ------------------------------ filters ------------------------------ */
-export type Filters = { maxDistance: number; verifiedOnly: boolean; intention: string | null };
+/**
+ * Basic (all tiers): distance + age range, coarse steps (5 km / age brackets).
+ * MATCH+: 1 km / 1-year precision, verified-only, intention. The server
+ * (get_discover_deck) ignores verified/intention for free accounts.
+ */
+export type Filters = { maxDistance: number; verifiedOnly: boolean; intention: string | null; minAge: number | null; maxAge: number | null };
+export const DEFAULT_FILTERS: Filters = { maxDistance: 50, verifiedOnly: false, intention: null, minAge: null, maxAge: null };
+
+const AGE_BRACKETS: [string, number | null, number | null][] = [
+  ['Any', null, null],
+  ['18–25', 18, 25],
+  ['25–35', 25, 35],
+  ['35–45', 35, 45],
+  ['45+', 45, null],
+];
 
 export function FiltersSheet({ visible, filters, onClose, onApply }: { visible: boolean; filters: Filters; onClose: () => void; onApply: (f: Filters) => void }) {
   const { requirePremium, tier } = useApp();
+  const plus = tier !== 'free';
   const [local, setLocal] = useState(filters);
   useEffect(() => {
     if (visible) setLocal(filters);
   }, [visible, filters]);
+  const minAge = local.minAge ?? 18;
+  const maxAge = local.maxAge ?? 80;
   return (
     <Sheet visible={visible} onClose={onClose} title="Filters" icon={<SlidersHorizontal size={17} color={T.text} />}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
         <Txt size={12.5} color={T.muted}>
-          Maximum distance
+          Maximum distance{plus ? '' : ' · 5 km steps'}
         </Txt>
         <Txt v="mono" size={12.5}>
           {local.maxDistance} km
         </Txt>
       </View>
       <Slider
-        minimumValue={1}
-        maximumValue={15}
-        step={1}
-        value={local.maxDistance}
+        minimumValue={plus ? 1 : 5}
+        maximumValue={100}
+        step={plus ? 1 : 5}
+        value={plus ? local.maxDistance : Math.max(5, Math.round(local.maxDistance / 5) * 5)}
         onValueChange={(v) => setLocal((l) => ({ ...l, maxDistance: Math.round(v) }))}
         minimumTrackTintColor={T.rose}
         maximumTrackTintColor={T.surface3}
         thumbTintColor="#fff"
-        style={{ marginBottom: 18, height: 32 }}
+        style={{ marginBottom: 14, height: 32 }}
       />
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
+        <Txt w={700} size={13} color={T.muted}>
+          AGE
+        </Txt>
+        <Txt v="mono" size={12.5}>
+          {local.minAge == null && local.maxAge == null ? 'Any' : `${minAge}–${local.maxAge == null ? '80+' : maxAge}`}
+        </Txt>
+      </View>
+      {plus ? (
+        <>
+          <Slider
+            minimumValue={18}
+            maximumValue={80}
+            step={1}
+            value={minAge}
+            onValueChange={(v) => setLocal((l) => ({ ...l, minAge: Math.round(v), maxAge: Math.max(Math.round(v), l.maxAge ?? 80) }))}
+            minimumTrackTintColor={T.surface3}
+            maximumTrackTintColor={T.rose}
+            thumbTintColor="#fff"
+            style={{ height: 28 }}
+          />
+          <Slider
+            minimumValue={18}
+            maximumValue={80}
+            step={1}
+            value={maxAge}
+            onValueChange={(v) => setLocal((l) => ({ ...l, maxAge: Math.round(v) >= 80 ? null : Math.round(v), minAge: Math.min(Math.round(v), l.minAge ?? 18) }))}
+            minimumTrackTintColor={T.rose}
+            maximumTrackTintColor={T.surface3}
+            thumbTintColor="#fff"
+            style={{ marginBottom: 14, height: 28 }}
+          />
+        </>
+      ) : (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 6 }}>
+          {AGE_BRACKETS.map(([label, lo, hi]) => (
+            <Chip key={label} label={label} active={local.minAge === lo && local.maxAge === hi} onPress={() => setLocal((l) => ({ ...l, minAge: lo, maxAge: hi }))} />
+          ))}
+        </View>
+      )}
+      {!plus ? (
+        <Pressable onPress={() => requirePremium('match_plus', 'Exact age & distance are part of MATCH+')} style={{ marginBottom: 14 }}>
+          <Txt size={11.5} color={T.amber}>
+            🔒 Exact age & 1 km precision with MATCH+
+          </Txt>
+        </Pressable>
+      ) : null}
       <Txt w={700} size={13} color={T.muted} style={{ marginBottom: 8 }}>
-        LOOKING FOR
+        LOOKING FOR{plus ? '' : ' (MATCH+)'}
       </Txt>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 18 }}>
         <Chip label="Any" active={!local.intention} onPress={() => setLocal((l) => ({ ...l, intention: null }))} />
@@ -126,7 +229,7 @@ export function FiltersSheet({ visible, filters, onClose, onApply }: { visible: 
       </View>
       <SettingRow
         icon={<BadgeCheck size={16} color={T.text} />}
-        label={tier === 'free' ? 'Verified profiles only (MATCH+)' : 'Verified profiles only'}
+        label={plus ? 'Verified profiles only' : 'Verified profiles only (MATCH+)'}
         active={local.verifiedOnly}
         onPress={() => {
           if (!local.verifiedOnly && !requirePremium('match_plus', 'Verified-only filter is part of MATCH+')) return;

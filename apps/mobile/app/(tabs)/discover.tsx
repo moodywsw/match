@@ -1,10 +1,10 @@
 import { LinearGradient } from 'expo-linear-gradient';
-import { Heart, MapPin, MoreHorizontal, RotateCcw, Sparkles, SlidersHorizontal, Star, X } from 'lucide-react-native';
-import { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Heart, MapPin, MoreHorizontal, RotateCcw, Sparkles, SlidersHorizontal, Star, X, Zap } from 'lucide-react-native';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Dimensions, PanResponder, Pressable, ScrollView, View } from 'react-native';
 
 import { useBarInsets } from '@/components/app/Bars';
-import { CompatibilitySheet, FiltersSheet, MapView, SafetySheet, type Filters } from '@/components/app/DiscoverParts';
+import { CompatibilitySheet, DEFAULT_FILTERS, FiltersSheet, MapView, SafetySheet, type Filters } from '@/components/app/DiscoverParts';
 import { DemoTag, FadeUp, MatchRing, Photo, PrimaryButton, RoundBtn, Tag, VerifiedIcon } from '@/components/ui/primitives';
 import { Txt } from '@/components/ui/Txt';
 import { T } from '@/constants/theme';
@@ -12,6 +12,7 @@ import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useEvents } from '@/hooks/useEvents';
 import { DISCOVERY_MODES, hash01, type Person } from '@/lib/mock';
+import { activateBoost, fetchBoostStatus, perkErrorCode, recordProfileView } from '@/lib/perks';
 import { blockUser, reportUser } from '@/lib/safety';
 
 const { width: SCREEN_W } = Dimensions.get('window');
@@ -38,14 +39,73 @@ function sortForMode(list: Person[], mode: string, myInterests: string[]) {
   }
 }
 
+/** Rewound card first, then people who super liked me, then boosted profiles (stable). */
+function pinPriority(list: Person[], rewoundId: string | null) {
+  const rank = (p: Person) => (p.id === rewoundId ? 3 : p.superLikedMe ? 2 : p.boosted ? 1 : 0);
+  return list
+    .map((p, i) => ({ p, i }))
+    .sort((a, b) => rank(b.p) - rank(a.p) || a.i - b.i)
+    .map((x) => x.p);
+}
+
+function useBoost() {
+  const { tier, requirePremium, toast } = useApp();
+  const [activeUntil, setActiveUntil] = useState<number | null>(null);
+  const [left, setLeft] = useState({ used: 0, quota: 0 });
+  const [now, setNow] = useState(Date.now());
+  const refresh = useCallback(async () => {
+    try {
+      const s = await fetchBoostStatus();
+      setActiveUntil(s.activeUntil ? new Date(s.activeUntil).getTime() : null);
+      setLeft({ used: s.usedThisMonth, quota: s.monthlyQuota });
+    } catch (e) {
+      console.warn('[match] boost status failed', e);
+    }
+  }, []);
+  useEffect(() => {
+    void refresh();
+  }, [refresh, tier]);
+  const active = activeUntil != null && activeUntil > now;
+  useEffect(() => {
+    if (!active) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [active]);
+  const remaining = active ? Math.max(0, Math.round((activeUntil! - now) / 1000)) : 0;
+  const label = active ? `${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, '0')}` : 'Boost';
+  const start = async () => {
+    if (active) {
+      toast(`You're boosted — top of Discover for ${Math.ceil(remaining / 60)} more min`);
+      return;
+    }
+    if (!requirePremium('match_plus', 'Boost is part of MATCH+ (1 per month)')) return;
+    try {
+      const ends = await activateBoost();
+      setActiveUntil(new Date(ends).getTime());
+      setNow(Date.now());
+      toast('⚡ Boost on — 30 min at the top of Discover');
+      void refresh();
+    } catch (err) {
+      const code = perkErrorCode(err);
+      if (code === 'boost_quota') toast('Monthly boost already used — next one on the 1st');
+      else if (code === 'boost_active') toast('A boost is already running');
+      else if (code === 'premium_required') requirePremium('match_plus', 'Boost is part of MATCH+');
+      else toast(code);
+    }
+  };
+  return { active, label, start, available: left.quota - left.used };
+}
+
 export default function DiscoverTab() {
   const bars = useBarInsets();
   const { user } = useAuth();
-  const { people, likedIds, passedIds, like, pass, me, resetDeck, removePerson, toast } = useApp();
+  const { people, likedIds, passedIds, like, pass, me, resetDeck, removePerson, toast, tier, setDeckFilters, rewind, rewoundId } = useApp();
+  const plus = tier !== 'free';
+  const boost = useBoost();
   const { events } = useEvents();
   const [mode, setMode] = useState('Recommended');
   const [view, setView] = useState<'cards' | 'map'>('cards');
-  const [filters, setFilters] = useState<Filters>({ maxDistance: 15, verifiedOnly: false, intention: null });
+  const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [showFilters, setShowFilters] = useState(false);
   const [detail, setDetail] = useState<Person | null>(null);
   const [safety, setSafety] = useState<Person | null>(null);
@@ -61,11 +121,24 @@ export default function DiscoverTab() {
         !passedIds.has(p.id) &&
         p.id !== exiting &&
         (p.distance == null || p.distance <= filters.maxDistance) &&
-        (!filters.verifiedOnly || p.verified) &&
-        (!filters.intention || p.intentionCode === filters.intention)
+        (p.age == null || filters.minAge == null || p.age >= filters.minAge) &&
+        (p.age == null || filters.maxAge == null || p.age <= filters.maxAge) &&
+        (!plus || !filters.verifiedOnly || p.verified) &&
+        (!plus || !filters.intention || p.intentionCode === filters.intention)
     );
-    return sortForMode(filtered, mode, me?.interests ?? []);
-  }, [people, likedIds, passedIds, exiting, filters, mode, me?.interests]);
+    return pinPriority(sortForMode(filtered, mode, me?.interests ?? []), rewoundId);
+  }, [people, likedIds, passedIds, exiting, filters, mode, me?.interests, plus, rewoundId]);
+
+  const openDetail = (p: Person) => {
+    setDetail(p);
+    if (p.real) recordProfileView(p.id).catch((e) => console.warn('[match] record_profile_view failed', e));
+  };
+
+  const doRewind = async () => {
+    if (busy.current) return;
+    const id = await rewind();
+    if (id) setExiting(null);
+  };
 
   const current = deck[0] ?? null;
 
@@ -125,7 +198,8 @@ export default function DiscoverTab() {
           ))}
         </ScrollView>
 
-        <View style={{ flexDirection: 'row', gap: 4, backgroundColor: T.surface2, borderRadius: 999, padding: 4, marginBottom: 4, alignSelf: 'flex-start', marginLeft: 18 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginHorizontal: 18, marginBottom: 4 }}>
+        <View style={{ flexDirection: 'row', gap: 4, backgroundColor: T.surface2, borderRadius: 999, padding: 4 }}>
           {(
             [
               ['cards', 'Cards'],
@@ -140,6 +214,15 @@ export default function DiscoverTab() {
             </Pressable>
           ))}
         </View>
+        <Pressable
+          onPress={() => void boost.start()}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 8, paddingHorizontal: 14, borderRadius: 999, borderWidth: 1, borderColor: boost.active ? T.amber : T.border, backgroundColor: boost.active ? `${T.amber}22` : T.surface2 }}>
+          <Zap size={13} color={T.amber} fill={boost.active ? T.amber : 'transparent'} />
+          <Txt v={boost.active ? 'mono' : undefined} w={700} size={12.5} color={boost.active ? T.amber : T.muted}>
+            {boost.label}
+          </Txt>
+        </Pressable>
+        </View>
 
         {view === 'map' ? (
           <View style={{ flex: 1, paddingHorizontal: 18 }} onLayout={(e) => setAreaH(e.nativeEvent.layout.height)}>
@@ -153,6 +236,11 @@ export default function DiscoverTab() {
                   <RotateCcw size={26} color={T.muted} />
                   <Txt color={T.muted}>You've seen everyone for now.</Txt>
                   <PrimaryButton small label="Refresh deck" onPress={resetDeck} />
+                  <Pressable onPress={() => void doRewind()} hitSlop={8} style={{ marginTop: 4 }}>
+                    <Txt w={700} size={12} color={T.amber}>
+                      ↺ Undo last swipe{plus ? '' : ' (MATCH+)'}
+                    </Txt>
+                  </Pressable>
                 </View>
               ) : (
                 deck
@@ -172,8 +260,8 @@ export default function DiscoverTab() {
                           top: stackOffset,
                           height: cardH,
                           borderRadius: 26,
-                          borderWidth: 1,
-                          borderColor: T.border,
+                          borderWidth: p.superLikedMe ? 2 : 1,
+                          borderColor: p.superLikedMe ? T.amber : T.border,
                           backgroundColor: T.surface,
                           shadowColor: '#000',
                           shadowOpacity: 0.55,
@@ -188,7 +276,7 @@ export default function DiscoverTab() {
                           isTop={isTop}
                           likeOpacity={likeOpacity}
                           passOpacity={passOpacity}
-                          onWhy={() => setDetail(p)}
+                          onWhy={() => openDetail(p)}
                           onSafety={() => setSafety(p)}
                         />
                       </Animated.View>
@@ -198,7 +286,10 @@ export default function DiscoverTab() {
             </View>
 
             {current ? (
-              <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 18, marginTop: 14 }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 14, marginTop: 14 }}>
+                <RoundBtn onPress={() => void doRewind()} color={T.amber} small>
+                  <RotateCcw size={16} color={T.amber} />
+                </RoundBtn>
                 <RoundBtn onPress={() => advance('pass')} color={T.mutedDim}>
                   <X size={24} color={T.mutedDim} />
                 </RoundBtn>
@@ -225,6 +316,13 @@ export default function DiscoverTab() {
         onApply={(f) => {
           setFilters(f);
           setShowFilters(false);
+          setDeckFilters({
+            maxKm: f.maxDistance,
+            minAge: f.minAge,
+            maxAge: f.maxAge,
+            verifiedOnly: plus && f.verifiedOnly,
+            intention: plus ? f.intention : null,
+          });
         }}
       />
       <SafetySheet
@@ -303,6 +401,26 @@ function Card({
           )}
         </View>
         <View style={{ position: 'absolute', bottom: 14, left: 16, right: 16 }}>
+          {p.superLikedMe || p.boosted ? (
+            <View style={{ flexDirection: 'row', gap: 6, marginBottom: 6 }}>
+              {p.superLikedMe ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 4, paddingHorizontal: 10, borderRadius: 999, backgroundColor: T.amber }}>
+                  <Star size={11} color={T.ink} fill={T.ink} />
+                  <Txt w={800} size={11} color={T.ink}>
+                    Super liked you
+                  </Txt>
+                </View>
+              ) : null}
+              {p.boosted ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 4, paddingHorizontal: 10, borderRadius: 999, backgroundColor: T.chipDark, borderWidth: 1, borderColor: `${T.amber}88` }}>
+                  <Zap size={11} color={T.amber} fill={T.amber} />
+                  <Txt w={700} size={11} color={T.amber}>
+                    Boosted
+                  </Txt>
+                </View>
+              ) : null}
+            </View>
+          ) : null}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <Txt v="display" size={24}>
               {p.name}

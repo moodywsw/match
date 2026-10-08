@@ -11,7 +11,8 @@ import { ensureConversation } from '@/lib/chat';
 import { personFromDiscover, type Me } from '@/lib/compat';
 import { fetchInterestLabelsForUsers } from '@/lib/interests';
 import { DEMO_MATCHED_IDS, PROFILES, SHOW_DEMO_CONTENT, type Person } from '@/lib/mock';
-import { ageFromBirthDate, fetchDiscoverDeck, fetchPrimaryPhotos, sendLike } from '@/lib/profile';
+import { ageFromBirthDate, fetchDiscoverDeck, fetchPrimaryPhotos, recordPass, sendLike, type DeckFilters } from '@/lib/profile';
+import { perkErrorCode, rewindLastSwipe } from '@/lib/perks';
 import { fetchInbox, inboxIcon, inboxText, markAllRead, subscribeInbox, timeAgo, type InboxItem } from '@/lib/inbox';
 import { configureIap, fetchServerTier, type EntitlementId, type Tier } from '@/lib/iap';
 import { pushLatestNotification } from '@/lib/push';
@@ -27,7 +28,10 @@ type AppContextValue = {
   people: Person[];
   peopleLoading: boolean;
   peopleError: string | null;
-  reloadPeople: () => Promise<void>;
+  reloadPeople: (opts?: { includePassed?: boolean }) => Promise<void>;
+  /** Server-side deck filters (age/distance for all; verified/intention honoured for MATCH+). */
+  deckFilters: DeckFilters;
+  setDeckFilters: (f: DeckFilters) => void;
   personById: (id: string) => Person | undefined;
   likedIds: Set<string>;
   passedIds: Set<string>;
@@ -35,8 +39,12 @@ type AppContextValue = {
   like: (p: Person, opts?: { superLike?: boolean }) => Promise<void>;
   pass: (p: Person) => void;
   removePerson: (id: string) => void;
-  /** Prototype 'Refresh deck': forget passes (and demo likes) this session. */
+  /** Prototype 'Refresh deck': bring passed people back (server include_passed). */
   resetDeck: () => void;
+  /** MATCH+: undo the last like/pass (server RPC, only if no match formed). Returns the person id put back on top. */
+  rewind: () => Promise<string | null>;
+  /** Person just restored by rewind — Discover shows it first. */
+  rewoundId: string | null;
   toast: (msg: string) => void;
   openNotifications: () => void;
   openPremium: () => void;
@@ -62,6 +70,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [peopleError, setPeopleError] = useState<string | null>(null);
   const [likedIds, setLikedIds] = useState<Set<string>>(new Set());
   const [passedIds, setPassedIds] = useState<Set<string>>(new Set());
+  const [deckFilters, setDeckFilters] = useState<DeckFilters>({});
+  const [rewoundId, setRewoundId] = useState<string | null>(null);
+  /** Local swipe history (newest last) so demo cards can be rewound and real ones restored instantly. */
+  const history = useRef<{ person: Person; kind: 'like' | 'pass' }[]>([]);
   const [removed, setRemoved] = useState<Set<string>>(new Set());
   const [demoMatchedIds, setDemoMatchedIds] = useState<string[]>(DEMO_MATCHED_IDS);
   const [match, setMatch] = useState<MatchState | null>(null);
@@ -150,19 +162,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [user?.id, myInterests, profile?.intention]
   );
 
-  const reloadPeople = useCallback(async () => {
+  const reloadPeople = useCallback(async (opts?: { includePassed?: boolean }) => {
     if (!user?.id || !meForCompat) return;
     setPeopleLoading(true);
     setPeopleError(null);
     try {
-      const rows = await fetchDiscoverDeck(user.id);
+      const rows = await fetchDiscoverDeck(user.id, { ...deckFilters, includePassed: !!opts?.includePassed });
       setRealPeople(rows.map((r) => personFromDiscover(meForCompat, r)));
     } catch (err) {
       setPeopleError(err instanceof Error ? err.message : 'Failed to load people');
     } finally {
       setPeopleLoading(false);
     }
-  }, [user?.id, meForCompat]);
+  }, [user?.id, meForCompat, deckFilters]);
 
   useEffect(() => {
     if (ready) void refreshMe();
@@ -176,6 +188,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (!user?.id) {
       setLikedIds(new Set());
       setPassedIds(new Set());
+      history.current = [];
+      setRewoundId(null);
       setRealPeople([]);
       setMyPhoto(null);
       setMyInterests([]);
@@ -201,8 +215,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     async (p: Person, opts?: { superLike?: boolean }) => {
       if (!user?.id || likedIds.has(p.id)) return;
       setLikedIds((s) => new Set(s).add(p.id));
+      if (rewoundId === p.id) setRewoundId(null);
       const overlay: MatchOverlayData = { name: p.name, photo: p.photo, myPhoto, myName: profile?.name || 'You' };
       if (!p.real) {
+        history.current.push({ person: p, kind: 'like' });
         // Demo people behave like the prototype: ~65% chance it's mutual.
         if (Math.random() > 0.35) {
           setDemoMatchedIds((m) => (m.includes(p.id) ? m : [...m, p.id]));
@@ -214,11 +230,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
       try {
         const { match: row } = await sendLike(user.id, p.id, !!opts?.superLike);
+        history.current.push({ person: p, kind: 'like' });
         if (row) {
           setMatch({ data: overlay, person: p, matchId: row.id });
           void pushLatestNotification(p.id);
+        } else if (opts?.superLike) {
+          // DB trigger wrote a 'super_like' notification — push it right away.
+          void pushLatestNotification(p.id);
+          toast(`Super like sent to ${p.name} ⭐ — they'll see you first`);
         } else {
-          toast(opts?.superLike ? `Super like sent to ${p.name} ⭐` : `Like sent to ${p.name} 💫`);
+          toast(`Like sent to ${p.name} 💫`);
         }
       } catch (err) {
         setLikedIds((s) => {
@@ -238,16 +259,67 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }
       }
     },
-    [user?.id, likedIds, myPhoto, profile?.name, toast, openPaywall, tier]
+    [user?.id, likedIds, myPhoto, profile?.name, toast, openPaywall, tier, rewoundId]
   );
 
-  const pass = useCallback((p: Person) => setPassedIds((s) => new Set(s).add(p.id)), []);
+  const pass = useCallback(
+    (p: Person) => {
+      setPassedIds((s) => new Set(s).add(p.id));
+      if (rewoundId === p.id) setRewoundId(null);
+      history.current.push({ person: p, kind: 'pass' });
+      if (p.real) recordPass(p.id).catch((e) => console.warn('[match] record_pass failed', e));
+    },
+    [rewoundId]
+  );
   const removePerson = useCallback((id: string) => setRemoved((s) => new Set(s).add(id)), []);
   const resetDeck = useCallback(() => {
     setPassedIds(new Set());
     setLikedIds((s) => new Set([...s].filter((id) => !id.startsWith('demo-'))));
-    void reloadPeople();
+    void reloadPeople({ includePassed: true });
   }, [reloadPeople]);
+
+  const unswipeLocal = useCallback((id: string) => {
+    const drop = (s: Set<string>) => {
+      if (!s.has(id)) return s;
+      const n = new Set(s);
+      n.delete(id);
+      return n;
+    };
+    setLikedIds(drop);
+    setPassedIds(drop);
+    setDemoMatchedIds((m) => m.filter((x) => x !== id));
+    setRewoundId(id);
+  }, []);
+
+  const rewind = useCallback(async (): Promise<string | null> => {
+    if (!requirePremium('match_plus', 'Rewind is part of MATCH+')) return null;
+    const last = history.current[history.current.length - 1];
+    if (last && !last.person.real) {
+      history.current.pop();
+      unswipeLocal(last.person.id);
+      toast(`Rewound — ${last.person.name} is back`);
+      return last.person.id;
+    }
+    try {
+      const r = await rewindLastSwipe();
+      const prev = history.current.find((h) => h.person.id === r.targetId)?.person ?? realPeople.find((p) => p.id === r.targetId);
+      history.current = history.current.filter((h) => h.person.id !== r.targetId);
+      unswipeLocal(r.targetId);
+      if (!realPeople.some((p) => p.id === r.targetId)) await reloadPeople();
+      const name = prev?.name;
+      toast(r.kind === 'like' ? `Like undone${name ? ` — ${name} is back` : ''}` : `Rewound${name ? ` — ${name} is back` : ''}`);
+      return r.targetId;
+    } catch (err) {
+      const code = perkErrorCode(err);
+      if (code === 'already_matched') toast("You already matched — that one can't be undone");
+      else if (code === 'nothing_to_rewind') toast('Nothing to rewind (last 24h)');
+      else if (code === 'premium_required') {
+        toast('Rewind is part of MATCH+');
+        openPaywall('match_plus');
+      } else toast(code);
+      return null;
+    }
+  }, [requirePremium, unswipeLocal, toast, realPeople, reloadPeople, openPaywall]);
 
   const onMatchMessage = useCallback(async () => {
     const m = match;
@@ -267,6 +339,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   /* ---------- notifications inbox (realtime) ---------- */
   const [inbox, setInbox] = useState<InboxItem[]>([]);
+  const reloadRef = useRef(reloadPeople);
+  reloadRef.current = reloadPeople;
   useEffect(() => {
     if (!user?.id) {
       setInbox([]);
@@ -277,6 +351,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       .then((items) => alive && setInbox(items))
       .catch((e) => console.warn('[match] inbox load failed', e));
     const unsub = subscribeInbox(user.id, (item) => {
+      // A super like puts that person at the top of my deck right away.
+      if (item.type === 'super_like' && !item.readAt) void reloadRef.current();
       setInbox((prev) => [item, ...prev.filter((x) => x.id !== item.id)].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 80));
     });
     return () => {
@@ -303,6 +379,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         } else if (n.type === 'match' && typeof n.payload.match_id === 'string') {
           const convId = await ensureConversation(n.payload.match_id);
           router.push({ pathname: '/chat/[conversationId]', params: { conversationId: convId } });
+        } else if (n.type === 'super_like') {
+          router.navigate('/(tabs)/discover');
         } else {
           router.navigate('/(tabs)/social');
         }
@@ -330,6 +408,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       peopleLoading,
       peopleError,
       reloadPeople,
+      deckFilters,
+      setDeckFilters,
       personById,
       likedIds,
       passedIds,
@@ -338,6 +418,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       pass,
       removePerson,
       resetDeck,
+      rewind,
+      rewoundId,
       toast,
       openNotifications: () => setNotifOpen(true),
       openPremium: () => openPaywall('match_plus'),
@@ -347,7 +429,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       refreshTier,
       requirePremium,
     }),
-    [me, refreshMe, people, peopleLoading, peopleError, reloadPeople, personById, likedIds, passedIds, demoMatchedIds, like, pass, removePerson, resetDeck, toast, inbox, unreadCount, tier, refreshTier, requirePremium, openPaywall]
+    [me, refreshMe, people, peopleLoading, peopleError, reloadPeople, deckFilters, rewind, rewoundId, personById, likedIds, passedIds, demoMatchedIds, like, pass, removePerson, resetDeck, toast, inbox, unreadCount, tier, refreshTier, requirePremium, openPaywall]
   );
 
   return (

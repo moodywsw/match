@@ -99,5 +99,7 @@ export function personFromDiscover(me: Me, p: DiscoverProfile): Person {
     online: false,
     badges: [BADGES[b1], BADGES[(b1 + 2) % BADGES.length]],
     real: true,
+    boosted: !!p.boosted,
+    superLikedMe: !!p.superLikedMe,
   };
 }
