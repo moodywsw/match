@@ -1,9 +1,9 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import { ArrowLeft, Image as ImageIcon, Mic, MoreHorizontal, Send } from 'lucide-react-native';
+import { ArrowLeft, Check, CheckCheck, Image as ImageIcon, Mic, MoreHorizontal, Send } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Easing, FlatList, Image, KeyboardAvoidingView, Platform, Pressable, TextInput, View } from 'react-native';
+import { Animated, AppState, Easing, FlatList, Image, KeyboardAvoidingView, Platform, Pressable, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ImageBubble, RecordingBar, StaticVoiceBubble, useVoiceRecorder, VoiceBubble } from '@/components/app/ChatMedia';
@@ -13,7 +13,7 @@ import { Txt } from '@/components/ui/Txt';
 import { T, body } from '@/constants/theme';
 import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { fetchConversationMeta, fetchMessages, joinTypingChannel, sendMediaMessage, sendMessage, subscribeToMessages, type ChatMessage } from '@/lib/chat';
+import { fetchConversationMeta, fetchMessages, joinTypingChannel, markConversationRead, sendMediaMessage, sendMessage, subscribeToMessages, type ChatMessage } from '@/lib/chat';
 import { computeCompat } from '@/lib/compat';
 import { fetchInterestLabelsForUsers } from '@/lib/interests';
 import { avatar, CHAT_PREVIEWS, intentionLabel, PROFILES } from '@/lib/mock';
@@ -35,6 +35,10 @@ type Msg = {
   waveform?: number[] | null;
   pending?: boolean;
   real?: boolean;
+  /** sent time (real messages) */
+  at?: string | null;
+  /** recipient read it (only set when their read receipts are on) */
+  readAt?: string | null;
 };
 
 type Peer = { id: string; name: string; photo: string | null; online: boolean; match: number | null; icebreakers: string[] };
@@ -61,6 +65,34 @@ function TypingDots() {
           }}
         />
       ))}
+    </View>
+  );
+}
+
+function fmtTime(iso: string | null | undefined) {
+  if (!iso) return '';
+  return new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+}
+
+/** Sent ✓ / read ✓✓ under my own messages. */
+function Receipt({ m }: { m: Msg }) {
+  if (!m.mine || !m.real) return null;
+  const read = !!m.readAt;
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, alignSelf: 'flex-end', marginTop: 3, marginRight: 2 }}>
+      <Txt v="mono" size={9.5} color={T.mutedDim}>
+        {m.pending ? 'Sending…' : read ? `Read ${fmtTime(m.readAt)}` : fmtTime(m.at)}
+      </Txt>
+      {m.pending ? null : read ? <CheckCheck size={12} color={T.mint} /> : <Check size={12} color={T.mutedDim} />}
+    </View>
+  );
+}
+
+function MessageRow({ m }: { m: Msg }) {
+  return (
+    <View>
+      <Bubble m={m} />
+      <Receipt m={m} />
     </View>
   );
 }
@@ -96,7 +128,7 @@ export default function ChatScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user, profile } = useAuth();
-  const { me, toast, removePerson } = useApp();
+  const { me, toast, removePerson, clearInboxFor } = useApp();
   const [peer, setPeer] = useState<Peer | null>(null);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
@@ -143,6 +175,8 @@ export default function ChatScreen() {
       durationMs: m.duration_ms ?? null,
       waveform: Array.isArray(m.waveform) ? m.waveform : null,
       real: true,
+      at: m.created_at,
+      readAt: m.read_at,
     }),
     [user?.id]
   );
@@ -180,10 +214,19 @@ export default function ChatScreen() {
         if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load chat');
       }
     })();
-    const unsub = subscribeToMessages(conversationId, (m) => {
-      setMessages((prev) => (prev.some((x) => x.id === m.id) ? prev : [...prev, toMsg(m)]));
-      if (m.sender_id !== user.id) setTyping(false);
-    });
+    const unsub = subscribeToMessages(
+      conversationId,
+      (m) => {
+        setMessages((prev) => (prev.some((x) => x.id === m.id) ? prev : [...prev, toMsg(m)]));
+        if (m.sender_id !== user.id) {
+          setTyping(false);
+          markReadSoon();
+        }
+      },
+      // read_at stamped by the other side's mark_conversation_read → ✓✓
+      (m) => setMessages((prev) => prev.map((x) => (x.id === m.id ? { ...x, readAt: m.read_at } : x)))
+    );
+    markReadSoon();
     typingChannel.current = joinTypingChannel(conversationId, user.id, () => {
       setTyping(true);
       if (typingTimer.current) clearTimeout(typingTimer.current);
@@ -197,6 +240,26 @@ export default function ChatScreen() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDemo, conversationId, user?.id]);
+
+  /* ---------- read receipts: mark read while this chat is on screen ---------- */
+  const readTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const markReadSoon = useCallback(() => {
+    if (isDemo || !conversationId) return;
+    if (readTimer.current) clearTimeout(readTimer.current);
+    readTimer.current = setTimeout(() => {
+      if (AppState.currentState !== 'active') return;
+      markConversationRead(conversationId)
+        .then(() => clearInboxFor(conversationId))
+        .catch((e) => console.warn('[match] mark read failed', e));
+    }, 400);
+  }, [isDemo, conversationId, clearInboxFor]);
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (st) => st === 'active' && markReadSoon());
+    return () => {
+      sub.remove();
+      if (readTimer.current) clearTimeout(readTimer.current);
+    };
+  }, [markReadSoon]);
 
   useEffect(() => {
     const t = setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 60);
@@ -370,7 +433,7 @@ export default function ChatScreen() {
           keyExtractor={(m) => m.id}
           ListHeaderComponent={header}
           contentContainerStyle={{ paddingVertical: 6, paddingHorizontal: 4, gap: 8 }}
-          renderItem={({ item }) => <Bubble m={item} />}
+          renderItem={({ item }) => <MessageRow m={item} />}
           ListFooterComponent={typing ? <TypingDots /> : null}
           ListEmptyComponent={
             <Txt size={13} color={T.mutedDim} center style={{ marginTop: 30 }}>

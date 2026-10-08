@@ -13,6 +13,8 @@ export type ChatListItem = {
   lastMessageAt: string | null;
   /** SUPER MATCH sender's first message that I haven't replied to yet — pinned + badged. */
   priority: boolean;
+  /** Messages from them newer than my last read (public.conversation_reads). */
+  unreadCount: number;
 };
 
 export type ChatMessage = {
@@ -93,13 +95,21 @@ export async function fetchChatList(userId: string): Promise<ChatListItem[]> {
   const lastByConv: Record<string, { content: string | null; created_at: string }> = {};
   const priorityIn = new Set<string>();
   const iReplied = new Set<string>();
+  const unreadBy: Record<string, number> = {};
   if (convIds.length) {
-    const { data: msgs } = await supabase
-      .from('messages')
-      .select('conversation_id, sender_id, type, content, created_at, is_priority')
-      .in('conversation_id', convIds)
-      .order('created_at', { ascending: false });
+    const [{ data: msgs }, { data: reads }] = await Promise.all([
+      supabase
+        .from('messages')
+        .select('conversation_id, sender_id, type, content, created_at, is_priority')
+        .in('conversation_id', convIds)
+        .order('created_at', { ascending: false }),
+      supabase.from('conversation_reads').select('conversation_id, last_read_at').eq('user_id', userId).in('conversation_id', convIds),
+    ]);
+    const readAt = Object.fromEntries((reads || []).map((r) => [r.conversation_id as string, r.last_read_at as string]));
     for (const msg of msgs || []) {
+      if (msg.sender_id !== userId && (!readAt[msg.conversation_id] || msg.created_at > readAt[msg.conversation_id])) {
+        unreadBy[msg.conversation_id] = (unreadBy[msg.conversation_id] || 0) + 1;
+      }
       if (!lastByConv[msg.conversation_id]) {
         lastByConv[msg.conversation_id] = {
           content: messagePreview(msg),
@@ -127,6 +137,7 @@ export async function fetchChatList(userId: string): Promise<ChatListItem[]> {
         lastMessage: last?.content ?? null,
         lastMessageAt: last?.created_at ?? null,
         priority: priorityIn.has(conversationId) && !iReplied.has(conversationId),
+        unreadCount: unreadBy[conversationId] || 0,
       } satisfies ChatListItem;
     })
     .filter(Boolean) as ChatListItem[];
@@ -201,9 +212,21 @@ export function chatMediaUrl(path: string): Promise<string | null> {
   return signedUrl(CHAT_MEDIA_BUCKET, path);
 }
 
+/**
+ * Record that I've read this conversation (conversation_reads) and clear its
+ * message notifications. Only stamps messages.read_at — i.e. shows "Read" to
+ * the sender — when my `read_receipts` privacy setting is on (server-side).
+ */
+export async function markConversationRead(conversationId: string): Promise<number> {
+  const { data, error } = await supabase.rpc('mark_conversation_read', { p_conversation_id: conversationId });
+  if (error) throw error;
+  return Number(data) || 0;
+}
+
 export function subscribeToMessages(
   conversationId: string,
-  onInsert: (msg: ChatMessage) => void
+  onInsert: (msg: ChatMessage) => void,
+  onUpdate?: (msg: ChatMessage) => void
 ) {
   const channel = supabase
     .channel(`messages:${conversationId}`)
@@ -217,6 +240,18 @@ export function subscribeToMessages(
       },
       (payload) => {
         onInsert(payload.new as ChatMessage);
+      }
+    )
+    .on(
+      'postgres_changes',
+      {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'messages',
+        filter: `conversation_id=eq.${conversationId}`,
+      },
+      (payload) => {
+        onUpdate?.(payload.new as ChatMessage);
       }
     )
     .subscribe();

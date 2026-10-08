@@ -3,6 +3,7 @@ import { Camera, ChevronRight, Crown, LogOut, Pencil, Plus, Settings, Sparkles, 
 import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Image, Pressable, ScrollView, View } from 'react-native';
 
+import { FridayCard } from '@/components/app/FridayCard';
 import { EditProfileSheet, ProfileGradientButton, SettingsSheet } from '@/components/app/ProfileSheets';
 import { Screen } from '@/components/app/Screen';
 import { Avatar, Chip, FadeUp, MatchRing, SafetyLink, SectionTitle, StatCard, Tag, VerifiedIcon } from '@/components/ui/primitives';
@@ -141,6 +142,8 @@ export default function ProfileTab() {
             </Txt>
           </Pressable>
         </View>
+
+        <FridayCard answer={profile?.friday_answer} onEdit={() => setShowEdit(true)} style={{ marginBottom: 18 }} />
 
         <SectionTitle title="Your photos" sub="Tap a photo to make it your main one" />
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -18, marginBottom: 18 }} contentContainerStyle={{ gap: 10, paddingHorizontal: 18 }}>

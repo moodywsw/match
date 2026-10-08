@@ -1,6 +1,6 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { BadgeCheck, Camera, Check, ChevronRight, Eye, EyeOff, FileText, Lock, MapPin, RotateCcw, Shield, Trash2, Users } from 'lucide-react-native';
+import { BadgeCheck, Camera, Check, ChevronRight, Eye, EyeOff, FileText, Lock, MapPin, Navigation, RotateCcw, Shield, Trash2, Users } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
 import { Alert, Animated, Easing, Pressable, TextInput, View } from 'react-native';
 
@@ -12,9 +12,10 @@ import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { deleteMyAccount } from '@/lib/account';
 import { restorePurchases } from '@/lib/iap';
+import { getLocationStatus, shareApproximateLocation, stopSharingLocation } from '@/lib/location';
 import { fetchIncognito, perkErrorCode, setIncognito } from '@/lib/perks';
 import { fetchAllInterests, fetchUserInterestIds, setUserInterests, type Interest } from '@/lib/interests';
-import { INTENTIONS } from '@/lib/mock';
+import { FRIDAY_OPTIONS, INTENTIONS } from '@/lib/mock';
 import { fetchPrivacySettings, updatePrivacySettings, upsertOwnProfile, type PrivacySettings } from '@/lib/profile';
 import { fetchMyBlocks, unblockUser, type BlockedRow } from '@/lib/safety';
 
@@ -26,8 +27,9 @@ export function SettingsSheet({ visible, onClose, verified, onVerified }: { visi
   const { toast, requirePremium, refreshTier, tier } = useApp();
   const router = useRouter();
   const [deleting, setDeleting] = useState(false);
-  const [privacy, setPrivacy] = useState<PrivacySettings>({ show_online_status: true, show_distance: true, is_discoverable: true, who_can_message: 'matches' });
-  const [local, setLocal] = useState({ readReceipts: true });
+  const [privacy, setPrivacy] = useState<PrivacySettings>({ show_online_status: true, read_receipts: true, show_distance: true, is_discoverable: true, who_can_message: 'matches' });
+  const [locShared, setLocShared] = useState(false);
+  const [locBusy, setLocBusy] = useState(false);
   const [incognito, setIncognitoState] = useState(false);
   const [showVerify, setShowVerify] = useState(false);
   const [showBlocked, setShowBlocked] = useState(false);
@@ -41,7 +43,33 @@ export function SettingsSheet({ visible, onClose, verified, onVerified }: { visi
     fetchIncognito(user.id)
       .then(setIncognitoState)
       .catch(() => {});
+    getLocationStatus()
+      .then((s) => setLocShared(s.hasLocation))
+      .catch(() => {});
   }, [visible, user?.id]);
+
+  /** Opt-in: only a ~1.5 km grid cell is stored server-side; turning it off deletes it. */
+  const toggleLocation = async () => {
+    if (locBusy) return;
+    setLocBusy(true);
+    try {
+      if (locShared) {
+        await stopSharingLocation();
+        setLocShared(false);
+        toast('Location removed — distance and the map are hidden');
+      } else {
+        const res = await shareApproximateLocation();
+        if (res === 'shared') {
+          setLocShared(true);
+          toast('Approximate location on (≈1.5 km) 📍');
+        } else toast(res === 'denied' ? 'Location permission is off — enable it in Settings' : 'Could not get your location');
+      }
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Could not update location');
+    } finally {
+      setLocBusy(false);
+    }
+  };
 
   /** Server-enforced: trigger rejects enabling unless SUPER MATCH; RLS + deck hide you from people you haven't liked. */
   const toggleIncognito = async () => {
@@ -113,7 +141,8 @@ export function SettingsSheet({ visible, onClose, verified, onVerified }: { visi
     <Sheet visible={visible} onClose={onClose} title="Safety & privacy" icon={<Shield size={18} color={T.mint} />}>
       <SettingRow icon={<Eye size={16} color={T.text} />} label="Show online status" active={privacy.show_online_status} onPress={() => setP({ show_online_status: !privacy.show_online_status })} />
       <SettingRow icon={<MapPin size={16} color={T.text} />} label="Show distance" active={privacy.show_distance} onPress={() => setP({ show_distance: !privacy.show_distance })} />
-      <SettingRow icon={<Check size={16} color={T.text} />} label="Read receipts" active={local.readReceipts} onPress={() => setLocal((l) => ({ ...l, readReceipts: !l.readReceipts }))} />
+      <SettingRow icon={<Navigation size={16} color={T.text} />} label="Share approximate location (≈1.5 km)" active={locShared} onPress={() => void toggleLocation()} />
+      <SettingRow icon={<Check size={16} color={T.text} />} label="Read receipts" active={privacy.read_receipts} onPress={() => setP({ read_receipts: !privacy.read_receipts })} />
       <SettingRow
         icon={<EyeOff size={16} color={T.text} />}
         label={tier === 'super_match' ? 'Incognito — only people you like see you' : 'Incognito mode (SUPER MATCH)'}
@@ -341,6 +370,7 @@ export function EditProfileSheet({ visible, onClose }: { visible: boolean; onClo
   const [city, setCity] = useState('');
   const [bio, setBio] = useState('');
   const [intention, setIntention] = useState<string | null>(null);
+  const [friday, setFriday] = useState('');
   const [catalog, setCatalog] = useState<Interest[]>([]);
   const [selected, setSelected] = useState<number[]>([]);
   const [saving, setSaving] = useState(false);
@@ -351,6 +381,7 @@ export function EditProfileSheet({ visible, onClose }: { visible: boolean; onClo
     setCity(profile?.city ?? '');
     setBio(profile?.bio ?? '');
     setIntention(profile?.intention ?? null);
+    setFriday(profile?.friday_answer ?? '');
     Promise.all([fetchAllInterests(), fetchUserInterestIds(user.id)])
       .then(([all, mine]) => {
         setCatalog(all);
@@ -369,6 +400,7 @@ export function EditProfileSheet({ visible, onClose }: { visible: boolean; onClo
         city: city.trim() || null,
         bio: bio.trim() || null,
         intention: intention ?? profile?.intention ?? 'figuring_out',
+        friday_answer: friday.trim().slice(0, 80) || null,
         onboarding_complete: true,
       });
       await setUserInterests(user.id, selected);
@@ -398,6 +430,28 @@ export function EditProfileSheet({ visible, onClose }: { visible: boolean; onClo
           <Chip key={i.code} label={i.label} active={intention === i.code} onPress={() => setIntention(i.code)} small />
         ))}
       </View>
+      <Txt v="mono" size={11} color={T.mutedDim} style={{ letterSpacing: 1, marginBottom: 8 }}>
+        PERFECT FRIDAY NIGHT?
+      </Txt>
+      <View style={{ gap: 8, marginBottom: 8 }}>
+        {FRIDAY_OPTIONS.map((opt) => (
+          <Pressable
+            key={opt}
+            onPress={() => setFriday((f) => (f === opt ? '' : opt))}
+            style={{ paddingVertical: 12, paddingHorizontal: 16, borderRadius: 14, borderWidth: 1, borderColor: friday === opt ? T.violet : T.border, backgroundColor: friday === opt ? `${T.violet}22` : T.surface2, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Txt size={13.5}>{opt}</Txt>
+            {friday === opt ? <Check size={16} color={T.violet} /> : null}
+          </Pressable>
+        ))}
+      </View>
+      <TextInput
+        value={FRIDAY_OPTIONS.includes(friday) ? '' : friday}
+        onChangeText={setFriday}
+        placeholder="…or write your own"
+        placeholderTextColor={T.mutedDim}
+        maxLength={80}
+        style={[inputStyle, { marginBottom: 16, paddingVertical: 12, fontSize: 14 }]}
+      />
       {groups.map(([cat, items]) =>
         items.length ? (
           <View key={cat} style={{ marginBottom: 14 }}>

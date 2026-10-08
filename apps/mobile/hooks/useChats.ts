@@ -71,7 +71,7 @@ export function useChats() {
       online: false,
       preview: c.lastMessage || 'Say hi 👋',
       time: ago(c.lastMessageAt || c.matchedAt),
-      unread: c.priority,
+      unread: c.priority || c.unreadCount > 0,
       demo: false,
       priority: c.priority,
     };
