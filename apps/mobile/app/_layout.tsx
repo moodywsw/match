@@ -1,80 +1,102 @@
-import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
+import { Fraunces_500Medium, Fraunces_600SemiBold, Fraunces_700Bold } from '@expo-google-fonts/fraunces';
+import { IBMPlexMono_400Regular, IBMPlexMono_500Medium, IBMPlexMono_600SemiBold } from '@expo-google-fonts/ibm-plex-mono';
+import {
+  Inter_400Regular,
+  Inter_500Medium,
+  Inter_600SemiBold,
+  Inter_700Bold,
+  Inter_800ExtraBold,
+} from '@expo-google-fonts/inter';
+import { DarkTheme, Stack, ThemeProvider, useRouter, useSegments } from 'expo-router';
+import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
-import { useRouter, useSegments } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
-import { ActivityIndicator, View } from 'react-native';
+import { View } from 'react-native';
 import 'react-native-reanimated';
 
-import { useColorScheme } from '@/components/useColorScheme';
+import { LitMatch } from '@/components/ui/LitMatch';
+import { T } from '@/constants/theme';
+import { AppProvider } from '@/contexts/AppContext';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 
 export { ErrorBoundary } from 'expo-router';
 
 SplashScreen.preventAutoHideAsync();
 
-function AuthGate({ children }: { children: React.ReactNode }) {
+const theme = {
+  ...DarkTheme,
+  colors: { ...DarkTheme.colors, background: T.ink, card: T.surface, primary: T.rose, text: T.text, border: T.border },
+};
+
+function AuthGate({ children, fontsReady }: { children: React.ReactNode; fontsReady: boolean }) {
   const { session, profile, loading } = useAuth();
   const segments = useSegments();
   const router = useRouter();
 
   useEffect(() => {
-    if (loading) return;
-
-    const root = segments[0];
+    if (loading || !fontsReady) return;
+    const root = segments[0] as string | undefined;
     const inAuth = root === '(auth)';
     const inOnboarding = root === '(onboarding)';
+    const onLanding = !root || root === 'index';
 
     if (!session) {
-      if (!inAuth) router.replace('/(auth)/sign-in');
+      if (!inAuth && !onLanding) router.replace('/');
       return;
     }
-
-    const needsOnboarding = profile != null && !profile.onboarding_complete;
-
-    if (needsOnboarding) {
+    // Signed in but no complete profile yet → prototype onboarding flow.
+    if (!profile || !profile.onboarding_complete) {
       if (!inOnboarding) router.replace('/(onboarding)');
       return;
     }
-
-    if (inAuth || inOnboarding) {
-      router.replace('/(tabs)/discover');
-    }
-  }, [session, profile, loading, segments, router]);
+    if (inAuth || inOnboarding || onLanding) router.replace('/(tabs)/home');
+  }, [session, profile, loading, fontsReady, segments, router]);
 
   useEffect(() => {
-    if (!loading) {
-      SplashScreen.hideAsync();
-    }
-  }, [loading]);
+    if (!loading && fontsReady) SplashScreen.hideAsync();
+  }, [loading, fontsReady]);
 
-  if (loading) {
+  if (loading || !fontsReady) {
     return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#0B0B0F' }}>
-        <ActivityIndicator size="large" color="#E11D48" />
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: T.ink }}>
+        <LitMatch size={28} />
       </View>
     );
   }
-
   return <>{children}</>;
 }
 
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
+  const [fontsLoaded, fontError] = useFonts({
+    Fraunces_500Medium,
+    Fraunces_600SemiBold,
+    Fraunces_700Bold,
+    Inter_400Regular,
+    Inter_500Medium,
+    Inter_600SemiBold,
+    Inter_700Bold,
+    Inter_800ExtraBold,
+    IBMPlexMono_400Regular,
+    IBMPlexMono_500Medium,
+    IBMPlexMono_600SemiBold,
+  });
 
   return (
     <AuthProvider>
-      <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-        <AuthGate>
-          <Stack screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="index" />
-            <Stack.Screen name="(auth)" />
-            <Stack.Screen name="(onboarding)" />
-            <Stack.Screen name="(tabs)" />
-            <Stack.Screen name="chat/[conversationId]" options={{ headerShown: false }} />
-            <Stack.Screen name="events" options={{ headerShown: false }} />
-            <Stack.Screen name="live" options={{ headerShown: false }} />
-            <Stack.Screen name="+not-found" />
-          </Stack>
+      <ThemeProvider value={theme}>
+        <StatusBar style="light" />
+        <AuthGate fontsReady={fontsLoaded || !!fontError}>
+          <AppProvider>
+            <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: T.ink }, animation: 'fade' }}>
+              <Stack.Screen name="index" />
+              <Stack.Screen name="(auth)" />
+              <Stack.Screen name="(onboarding)" />
+              <Stack.Screen name="(tabs)" />
+              <Stack.Screen name="chat/[conversationId]" options={{ animation: 'slide_from_right' }} />
+              <Stack.Screen name="+not-found" />
+            </Stack>
+          </AppProvider>
         </AuthGate>
       </ThemeProvider>
     </AuthProvider>

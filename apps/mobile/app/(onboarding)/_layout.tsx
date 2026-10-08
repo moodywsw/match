@@ -1,5 +1,7 @@
 import { Stack } from 'expo-router';
 
+import { T } from '@/constants/theme';
+
 export default function OnboardingLayout() {
-  return <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#0B0B0F' } }} />;
+  return <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: T.ink } }} />;
 }

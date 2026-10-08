@@ -1,92 +1,65 @@
-import { SymbolView } from 'expo-symbols';
 import { Tabs } from 'expo-router';
 
-import Colors from '@/constants/Colors';
-import { useClientOnlyValue } from '@/components/useClientOnlyValue';
-import { useColorScheme } from '@/components/useColorScheme';
+import { BottomNav, TopBar } from '@/components/app/Bars';
+import { Backdrop } from '@/components/ui/primitives';
+import { useApp } from '@/contexts/AppContext';
 
-export default function TabLayout() {
-  const colorScheme = useColorScheme() ?? 'light';
+type NavLike = {
+  getState: () => { history?: unknown[] };
+  goBack: () => void;
+  navigate: (name: string) => void;
+};
 
+function Header({ navigation }: { navigation: NavLike }) {
+  const { me, openNotifications } = useApp();
+  const history = navigation.getState()?.history ?? [];
   return (
-    <Tabs
-      screenOptions={{
-        tabBarActiveTintColor: '#FF5573',
-        tabBarInactiveTintColor: Colors[colorScheme].tabIconDefault,
-        headerShown: useClientOnlyValue(false, true),
-        tabBarStyle: {
-          backgroundColor: colorScheme === 'dark' ? '#0B0B0F' : '#fff',
-          borderTopColor: colorScheme === 'dark' ? '#27272A' : '#E5E7EB',
-        },
-      }}>
-      <Tabs.Screen
-        name="discover"
-        options={{
-          title: 'Discover',
-          tabBarIcon: ({ color }) => (
-            <SymbolView
-              name={{
-                ios: 'flame.fill',
-                android: 'local_fire_department',
-                web: 'local_fire_department',
-              }}
-              tintColor={color}
-              size={26}
-            />
-          ),
+    <TopBar
+      canGoBack={history.length > 1}
+      onBack={() => navigation.goBack()}
+      onLive={() => navigation.navigate('live')}
+      onBell={openNotifications}
+      onAvatar={() => navigation.navigate('profile')}
+      photo={me?.photo ?? null}
+      name={me?.name ?? ''}
+    />
+  );
+}
+
+/**
+ * Prototype MainApp shell: glass TopBar + glass BottomNav
+ * (Home · Discover · Create · Matches · Messages). Profile, Live and Events
+ * are reachable from the top bar / sections and keep both bars.
+ */
+export default function TabLayout() {
+  return (
+    <>
+      <Backdrop />
+      <Tabs
+        backBehavior="history"
+        initialRouteName="home"
+        screenOptions={{
+          headerTransparent: true,
+          header: ({ navigation }) => <Header navigation={navigation as unknown as NavLike} />,
+          sceneStyle: { backgroundColor: 'transparent' },
+          animation: 'fade',
         }}
-      />
-      <Tabs.Screen
-        name="feed"
-        options={{
-          title: 'Feed',
-          tabBarIcon: ({ color }) => (
-            <SymbolView
-              name={{
-                ios: 'square.stack.fill',
-                android: 'dashboard',
-                web: 'dashboard',
-              }}
-              tintColor={color}
-              size={26}
-            />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="chat"
-        options={{
-          title: 'Chat',
-          tabBarIcon: ({ color }) => (
-            <SymbolView
-              name={{
-                ios: 'bubble.left.and.bubble.right.fill',
-                android: 'chat',
-                web: 'chat',
-              }}
-              tintColor={color}
-              size={26}
-            />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="profile"
-        options={{
-          title: 'Profile',
-          tabBarIcon: ({ color }) => (
-            <SymbolView
-              name={{
-                ios: 'person.crop.circle.fill',
-                android: 'person',
-                web: 'person',
-              }}
-              tintColor={color}
-              size={26}
-            />
-          ),
-        }}
-      />
-    </Tabs>
+        tabBar={({ state, navigation }) => (
+          <BottomNav
+            active={state.routes[state.index]?.name ?? 'home'}
+            onTab={(key) => navigation.navigate(key)}
+            onCreate={() => navigation.navigate('social')}
+          />
+        )}>
+        <Tabs.Screen name="home" />
+        <Tabs.Screen name="discover" />
+        <Tabs.Screen name="social" />
+        <Tabs.Screen name="matches" />
+        <Tabs.Screen name="messages" />
+        <Tabs.Screen name="profile" options={{ href: null }} />
+        <Tabs.Screen name="live" options={{ href: null }} />
+        <Tabs.Screen name="events" options={{ href: null }} />
+      </Tabs>
+    </>
   );
 }
