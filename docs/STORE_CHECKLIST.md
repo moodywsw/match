@@ -338,7 +338,9 @@ allow installing from the browser ("Install unknown apps") once.
 
 **Ship a JS-only change OTA (no reinstall)**
 ```bash
-npx eas-cli update --channel preview --environment preview --message "what changed"
+npx eas-cli update --channel preview --environment preview --platform android --message "what changed"
+# --platform android: the default "all" also exports web, whose static render needs a
+# WebSocket in Node (Node 22+); the APK only needs the Android bundle.
 ```
 The app downloads the update on launch and applies it on the next cold start: close it from
 recents and open it again. Always pass `--environment preview` so the update gets the same

@@ -85,7 +85,7 @@ Nothing below invents credentials — you create them in Apple / Google / Expo d
 4. **Build profiles** (already in `apps/mobile/eas.json`):
    ```bash
    eas build --profile preview --platform android   # internal APK (sideload), OTA channel "preview"
-   eas update --channel preview --environment preview --message "..."   # JS-only OTA to installed APKs
+   eas update --channel preview --environment preview --platform android --message "..."   # JS-only OTA to installed APKs
    eas build --profile preview --platform ios       # TestFlight/ad-hoc via EAS
    eas build --profile production --platform all
    eas submit --profile production --platform ios
