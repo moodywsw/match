@@ -1,21 +1,23 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { ArrowLeft, Image as ImageIcon, Mic, MoreHorizontal, Play, Send } from 'lucide-react-native';
+import * as ImagePicker from 'expo-image-picker';
+import { ArrowLeft, Image as ImageIcon, Mic, MoreHorizontal, Send } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Easing, FlatList, Image, KeyboardAvoidingView, Platform, Pressable, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { ImageBubble, RecordingBar, StaticVoiceBubble, useVoiceRecorder, VoiceBubble } from '@/components/app/ChatMedia';
 import { SafetySheet } from '@/components/app/DiscoverParts';
 import { Avatar, Backdrop, DemoTag, IconBtn } from '@/components/ui/primitives';
 import { Txt } from '@/components/ui/Txt';
 import { T, body } from '@/constants/theme';
 import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { fetchConversationMeta, fetchMessages, joinTypingChannel, sendMessage, subscribeToMessages } from '@/lib/chat';
+import { fetchConversationMeta, fetchMessages, joinTypingChannel, sendMediaMessage, sendMessage, subscribeToMessages, type ChatMessage } from '@/lib/chat';
 import { computeCompat } from '@/lib/compat';
 import { fetchInterestLabelsForUsers } from '@/lib/interests';
 import { avatar, CHAT_PREVIEWS, intentionLabel, PROFILES } from '@/lib/mock';
-import { notifyUserPush } from '@/lib/push';
+import { pushLatestNotification } from '@/lib/push';
 import { blockUser, reportUser } from '@/lib/safety';
 
 type Msg = {
@@ -23,8 +25,16 @@ type Msg = {
   mine: boolean;
   type: 'text' | 'image' | 'voice';
   text?: string | null;
+  /** demo image URL or local file while uploading */
   image?: string | null;
+  /** demo voice label */
   duration?: string;
+  mediaPath?: string | null;
+  localUri?: string | null;
+  durationMs?: number | null;
+  waveform?: number[] | null;
+  pending?: boolean;
+  real?: boolean;
 };
 
 type Peer = { id: string; name: string; photo: string | null; online: boolean; match: number | null; icebreakers: string[] };
@@ -57,29 +67,19 @@ function TypingDots() {
 
 function Bubble({ m }: { m: Msg }) {
   const radius = { borderRadius: 18, borderBottomRightRadius: m.mine ? 4 : 18, borderBottomLeftRadius: m.mine ? 18 : 4 };
-  if (m.type === 'image' && m.image) {
-    return <Image source={{ uri: m.image }} style={{ width: 180, height: 180, borderRadius: 16, alignSelf: m.mine ? 'flex-end' : 'flex-start', backgroundColor: T.surface3 }} />;
+  if (m.type === 'image') {
+    if (m.real) return <ImageBubble path={m.mediaPath} uri={m.localUri} mine={m.mine} pending={m.pending} />;
+    return <Image source={{ uri: m.image ?? undefined }} style={{ width: 180, height: 180, borderRadius: 16, alignSelf: m.mine ? 'flex-end' : 'flex-start', backgroundColor: T.surface3 }} />;
   }
-  const inner =
-    m.type === 'voice' ? (
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-        <View style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: 'rgba(255,255,255,0.25)', alignItems: 'center', justifyContent: 'center' }}>
-          <Play size={12} color="#fff" fill="#fff" />
-        </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
-          {Array.from({ length: 16 }).map((_, bi) => (
-            <View key={bi} style={{ width: 2, height: 4 + ((bi * 7) % 14), backgroundColor: '#fff', opacity: 0.7, borderRadius: 2 }} />
-          ))}
-        </View>
-        <Txt v="mono" size={10.5} color="#fff" style={{ opacity: 0.85 }}>
-          {m.duration}
-        </Txt>
-      </View>
-    ) : (
-      <Txt size={13.5} color={m.mine ? '#fff' : T.text} lh={1.35}>
-        {m.text}
-      </Txt>
-    );
+  if (m.type === 'voice') {
+    if (m.real) return <VoiceBubble path={m.mediaPath} uri={m.localUri} mine={m.mine} durationMs={m.durationMs} waveform={m.waveform} pending={m.pending} />;
+    return <StaticVoiceBubble mine={m.mine} duration={m.duration ?? '0:12'} />;
+  }
+  const inner = (
+    <Txt size={13.5} color={m.mine ? '#fff' : T.text} lh={1.35}>
+      {m.text}
+    </Txt>
+  );
   const pad = { paddingVertical: 10, paddingHorizontal: 14 };
   return m.mine ? (
     <LinearGradient colors={[T.rose, T.coral]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[{ alignSelf: 'flex-end', maxWidth: '78%' }, radius, pad]}>
@@ -134,12 +134,15 @@ export default function ChatScreen() {
 
   /* ---------- real conversation (Supabase + Realtime) ---------- */
   const toMsg = useCallback(
-    (m: { id: string; sender_id: string; type: string; content: string | null; media_url: string | null }): Msg => ({
+    (m: ChatMessage): Msg => ({
       id: m.id,
       mine: m.sender_id === user?.id,
-      type: m.type === 'image' ? 'image' : 'text',
+      type: m.type === 'image' || m.type === 'voice' ? m.type : 'text',
       text: m.content,
-      image: m.media_url,
+      mediaPath: m.media_path ?? null,
+      durationMs: m.duration_ms ?? null,
+      waveform: Array.isArray(m.waveform) ? m.waveform : null,
+      real: true,
     }),
     [user?.id]
   );
@@ -220,14 +223,7 @@ export default function ChatScreen() {
       const msg = await sendMessage(conversationId, user.id, text);
       setMessages((prev) => (prev.some((x) => x.id === msg.id) ? prev : [...prev, toMsg(msg)]));
       setInput('');
-      if (peer?.id) {
-        void notifyUserPush({
-          userId: peer.id,
-          title: profile?.name || 'New message',
-          body: text.slice(0, 120),
-          data: { conversationId, type: 'chat_message' },
-        });
-      }
+      void pushLatestNotification(peer?.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Send failed');
     } finally {
@@ -235,15 +231,81 @@ export default function ChatScreen() {
     }
   };
 
-  const sendImage = () => {
-    if (!isDemo) return toast('Photos in chat are coming soon 📷');
-    const n = Number(conversationId.replace('demo-', ''));
-    setMessages((m) => [...m, { id: `img-${Date.now()}`, mine: true, type: 'image', image: avatar(((n * 5) % 70) + 1, 400) }]);
+  /** Optimistic bubble → upload → swap for the stored row (Realtime dedupes by id). */
+  const sendMedia = async (media: Parameters<typeof sendMediaMessage>[2]) => {
+    if (!user?.id || !conversationId) return;
+    const tempId = `tmp-${Date.now()}`;
+    setMessages((prev) => [
+      ...prev,
+      { id: tempId, mine: true, type: media.type, localUri: media.uri, durationMs: media.durationMs ?? null, waveform: media.waveform ?? null, pending: true, real: true },
+    ]);
+    setError(null);
+    try {
+      const msg = await sendMediaMessage(conversationId, user.id, media);
+      setMessages((prev) => {
+        const withoutTemp = prev.filter((x) => x.id !== tempId);
+        if (withoutTemp.some((x) => x.id === msg.id)) return withoutTemp;
+        return [...withoutTemp, { ...toMsg(msg), localUri: media.uri }];
+      });
+      void pushLatestNotification(peer?.id);
+    } catch (err) {
+      setMessages((prev) => prev.filter((x) => x.id !== tempId));
+      toast(err instanceof Error ? err.message : 'Upload failed');
+    }
   };
-  const sendVoice = () => {
-    if (!isDemo) return toast('Voice notes are coming soon 🎙️');
-    setMessages((m) => [...m, { id: `v-${Date.now()}`, mine: true, type: 'voice', duration: `0:${String(8 + Math.floor(Math.random() * 27)).padStart(2, '0')}` }]);
+
+  const sendImage = async () => {
+    if (isDemo) {
+      const n = Number(conversationId.replace('demo-', ''));
+      setMessages((m) => [...m, { id: `img-${Date.now()}`, mine: true, type: 'image', image: avatar(((n * 5) % 70) + 1, 400) }]);
+      return;
+    }
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) return toast('Allow photo access to send pictures');
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.7 });
+    const asset = result.canceled ? null : result.assets?.[0];
+    if (!asset) return;
+    const mime = asset.mimeType && !/heic|heif/i.test(asset.mimeType) ? asset.mimeType : 'image/jpeg';
+    void sendMedia({ type: 'image', uri: asset.uri, mime });
   };
+
+  const voice = useVoiceRecorder();
+  const [voiceSending, setVoiceSending] = useState(false);
+  const sendVoice = async () => {
+    if (isDemo) {
+      setMessages((m) => [...m, { id: `v-${Date.now()}`, mine: true, type: 'voice', duration: `0:${String(8 + Math.floor(Math.random() * 27)).padStart(2, '0')}` }]);
+      return;
+    }
+    try {
+      const ok = await voice.start();
+      if (!ok) toast('Allow microphone access to record voice notes');
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Could not start recording');
+    }
+  };
+  const finishVoice = async () => {
+    setVoiceSending(true);
+    try {
+      const clip = await voice.stop();
+      if (!clip) return toast('Hold on a little longer — that was too short');
+      void sendMedia({ type: 'voice', uri: clip.uri, mime: 'audio/m4a', durationMs: clip.durationMs, waveform: clip.waveform });
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Recording failed');
+    } finally {
+      setVoiceSending(false);
+    }
+  };
+  useEffect(() => {
+    if (voice.active && voice.maxReached) void finishVoice();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [voice.maxReached, voice.active]);
+  useEffect(
+    () => () => {
+      void voice.cancel();
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  );
 
   const header = useMemo(
     () => (
@@ -321,29 +383,35 @@ export default function ChatScreen() {
         />
 
         <View style={{ flexDirection: 'row', gap: 8, paddingTop: 10, paddingHorizontal: 4, paddingBottom: Math.max(insets.bottom, 12), alignItems: 'center' }}>
-          <IconBtn onPress={sendImage}>
-            <ImageIcon size={16} color={T.text} />
-          </IconBtn>
-          <IconBtn onPress={sendVoice}>
-            <Mic size={16} color={T.text} />
-          </IconBtn>
-          <TextInput
-            value={input}
-            onChangeText={(v) => {
-              setInput(v);
-              typingChannel.current?.ping();
-            }}
-            onSubmitEditing={send}
-            returnKeyType="send"
-            placeholder="Type a message…"
-            placeholderTextColor={T.mutedDim}
-            style={{ flex: 1, paddingVertical: 12, paddingHorizontal: 16, borderRadius: 999, borderWidth: 1, borderColor: T.border, backgroundColor: T.surface2, color: T.text, fontSize: 13.5, ...body(400) }}
-          />
-          <Pressable onPress={send} disabled={sending} style={{ opacity: sending ? 0.6 : 1 }}>
-            <LinearGradient colors={[T.rose, T.coral]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' }}>
-              <Send size={16} color="#fff" />
-            </LinearGradient>
-          </Pressable>
+          {voice.active ? (
+            <RecordingBar durationMs={voice.durationMs} levels={voice.levels} sending={voiceSending} onCancel={() => void voice.cancel()} onSend={finishVoice} />
+          ) : (
+            <>
+              <IconBtn onPress={sendImage}>
+                <ImageIcon size={16} color={T.text} />
+              </IconBtn>
+              <IconBtn onPress={sendVoice}>
+                <Mic size={16} color={T.text} />
+              </IconBtn>
+              <TextInput
+                value={input}
+                onChangeText={(v) => {
+                  setInput(v);
+                  typingChannel.current?.ping();
+                }}
+                onSubmitEditing={send}
+                returnKeyType="send"
+                placeholder="Type a message…"
+                placeholderTextColor={T.mutedDim}
+                style={{ flex: 1, paddingVertical: 12, paddingHorizontal: 16, borderRadius: 999, borderWidth: 1, borderColor: T.border, backgroundColor: T.surface2, color: T.text, fontSize: 13.5, ...body(400) }}
+              />
+              <Pressable onPress={send} disabled={sending} style={{ opacity: sending ? 0.6 : 1 }}>
+                <LinearGradient colors={[T.rose, T.coral]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' }}>
+                  <Send size={16} color="#fff" />
+                </LinearGradient>
+              </Pressable>
+            </>
+          )}
         </View>
       </View>
 

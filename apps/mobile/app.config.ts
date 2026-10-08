@@ -53,9 +53,15 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       ],
       'expo-secure-store',
       [
+        'expo-audio',
+        {
+          microphonePermission: 'Match needs the microphone to record voice messages.',
+        },
+      ],
+      [
         'expo-image-picker',
         {
-          photosPermission: 'Match needs photo access to set your profile pictures.',
+          photosPermission: 'Match needs photo access for your profile pictures, stories and chat photos.',
         },
       ],
       [

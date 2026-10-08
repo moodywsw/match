@@ -1,5 +1,6 @@
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from './supabase';
+import { uploadToBucket } from './upload';
 
 export const PROFILE_PHOTOS_BUCKET = 'profile-photos';
 
@@ -50,13 +51,7 @@ export async function pickAndUploadProfilePhoto(userId: string): Promise<PhotoRo
   const ext = extFromMime(mime);
   const path = `${userId}/${Date.now()}.${ext}`;
 
-  const response = await fetch(asset.uri);
-  const blob = await response.blob();
-
-  const { error: uploadError } = await supabase.storage
-    .from(PROFILE_PHOTOS_BUCKET)
-    .upload(path, blob, { contentType: mime, upsert: false });
-  if (uploadError) throw uploadError;
+  await uploadToBucket(PROFILE_PHOTOS_BUCKET, path, asset.uri, mime);
 
   const { data: pub } = supabase.storage.from(PROFILE_PHOTOS_BUCKET).getPublicUrl(path);
   const url = pub.publicUrl;

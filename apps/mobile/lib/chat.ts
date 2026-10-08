@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { fetchPrimaryPhotos } from './profile';
+import { extFromMime, signedUrl, uploadToBucket } from './upload';
 
 export type ChatListItem = {
   matchId: string;
@@ -19,9 +20,23 @@ export type ChatMessage = {
   type: string;
   content: string | null;
   media_url: string | null;
+  media_path?: string | null;
+  duration_ms?: number | null;
+  waveform?: number[] | null;
   read_at: string | null;
   created_at: string;
 };
+
+const MSG_COLS =
+  'id, conversation_id, sender_id, type, content, media_url, media_path, duration_ms, waveform, read_at, created_at';
+
+export const CHAT_MEDIA_BUCKET = 'chat-media';
+
+export function messagePreview(m: { type: string; content: string | null }): string {
+  if (m.type === 'image') return '📷 Photo';
+  if (m.type === 'voice') return '🎤 Voice message';
+  return m.content ?? '';
+}
 
 export async function ensureConversation(matchId: string): Promise<string> {
   const { data, error } = await supabase.rpc('ensure_conversation', {
@@ -73,17 +88,17 @@ export async function fetchChatList(userId: string): Promise<ChatListItem[]> {
   }
 
   const convIds = Object.values(convByMatch).filter(Boolean) as string[];
-  let lastByConv: Record<string, { content: string | null; created_at: string }> = {};
+  const lastByConv: Record<string, { content: string | null; created_at: string }> = {};
   if (convIds.length) {
     const { data: msgs } = await supabase
       .from('messages')
-      .select('conversation_id, content, created_at')
+      .select('conversation_id, type, content, created_at')
       .in('conversation_id', convIds)
       .order('created_at', { ascending: false });
     for (const msg of msgs || []) {
       if (!lastByConv[msg.conversation_id]) {
         lastByConv[msg.conversation_id] = {
-          content: msg.content,
+          content: messagePreview(msg),
           created_at: msg.created_at,
         };
       }
@@ -116,7 +131,7 @@ export async function fetchMessages(
 ): Promise<ChatMessage[]> {
   const { data, error } = await supabase
     .from('messages')
-    .select('id, conversation_id, sender_id, type, content, media_url, read_at, created_at')
+    .select(MSG_COLS)
     .eq('conversation_id', conversationId)
     .order('created_at', { ascending: true })
     .limit(limit);
@@ -137,10 +152,46 @@ export async function sendMessage(
       type: 'text',
       content: content.trim(),
     })
-    .select('id, conversation_id, sender_id, type, content, media_url, read_at, created_at')
+    .select(MSG_COLS)
     .single();
   if (error) throw error;
   return data;
+}
+
+/**
+ * Upload an image / voice note to the private chat-media bucket
+ * ({conversation_id}/{sender_id}/…; RLS: only the two match members can read)
+ * and insert the message row.
+ */
+export async function sendMediaMessage(
+  conversationId: string,
+  senderId: string,
+  media: { type: 'image' | 'voice'; uri: string; mime: string; durationMs?: number; waveform?: number[] }
+): Promise<ChatMessage> {
+  const ext = extFromMime(media.mime, media.type === 'voice' ? 'm4a' : 'jpg');
+  const path = `${conversationId}/${senderId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+  await uploadToBucket(CHAT_MEDIA_BUCKET, path, media.uri, media.mime);
+  const { data, error } = await supabase
+    .from('messages')
+    .insert({
+      conversation_id: conversationId,
+      sender_id: senderId,
+      type: media.type,
+      media_path: path,
+      duration_ms: media.durationMs != null ? Math.round(media.durationMs) : null,
+      waveform: media.waveform ?? null,
+    })
+    .select(MSG_COLS)
+    .single();
+  if (error) {
+    void supabase.storage.from(CHAT_MEDIA_BUCKET).remove([path]);
+    throw error;
+  }
+  return data;
+}
+
+export function chatMediaUrl(path: string): Promise<string | null> {
+  return signedUrl(CHAT_MEDIA_BUCKET, path);
 }
 
 export function subscribeToMessages(
