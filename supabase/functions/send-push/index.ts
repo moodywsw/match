@@ -9,12 +9,19 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
  *  - Authorization: Bearer <user access token> → may notify user_id only if
  *    a match exists between the caller and that user (e.g. after a chat message)
  *
+ * Notification mode — body `{ "notification_for": "<user_id>" }`:
+ *    pushes the newest un-pushed public.notifications row (≤ 2 min old) whose
+ *    user_id is the target and whose actor_id is the caller. The row is written
+ *    by DB triggers (match, message, post_like, comment, story_reply), so the
+ *    caller cannot forge content: title/body are built here from that row.
+ *
  * Expo Push API accepts ExponentPushToken[...] without an Expo account secret.
  * Do not put Expo or service-role secrets in git; SUPABASE_* are injected by the runtime.
  */
 
 type PushBody = {
-  user_id: string;
+  user_id?: string;
+  notification_for?: string;
   title?: string;
   body?: string;
   data?: Record<string, unknown>;
@@ -88,6 +95,17 @@ Deno.serve(async (req: Request) => {
     payload = (await req.json()) as PushBody;
   } catch {
     return json({ error: "Invalid JSON body" }, 400);
+  }
+
+  if (payload.notification_for) {
+    return await pushFromNotification(
+      supabaseUrl,
+      serviceKey,
+      anonKey,
+      authHeader,
+      role,
+      payload.notification_for.trim(),
+    );
   }
 
   const targetUserId = payload.user_id?.trim();
@@ -164,6 +182,10 @@ Deno.serve(async (req: Request) => {
     sound: payload.sound === null ? null : "default",
   }));
 
+  return await sendExpo(messages);
+});
+
+async function sendExpo(messages: ExpoPushMessage[]): Promise<Response> {
   const expoRes = await fetch("https://exp.host/--/api/v2/push/send", {
     method: "POST",
     headers: {
@@ -191,4 +213,93 @@ Deno.serve(async (req: Request) => {
     sent: messages.length,
     tickets: expoJson,
   });
-});
+}
+
+type NotificationRow = {
+  id: string;
+  user_id: string;
+  actor_id: string | null;
+  type: string;
+  payload: Record<string, unknown> | null;
+};
+
+function describe(n: NotificationRow, actorName: string): { title: string; body: string } {
+  const preview = typeof n.payload?.preview === "string" ? (n.payload.preview as string) : "";
+  switch (n.type) {
+    case "match":
+      return { title: "It's a match! 🔥", body: `You and ${actorName} liked each other` };
+    case "message":
+      return { title: actorName, body: preview || "Sent you a message" };
+    case "post_like":
+      return { title: "MATCH", body: `${actorName} liked your post` };
+    case "comment":
+      return { title: "MATCH", body: preview ? `${actorName} commented: ${preview}` : `${actorName} commented on your post` };
+    case "story_reply":
+      return { title: "MATCH", body: preview ? `${actorName} replied to your story: ${preview}` : `${actorName} replied to your story` };
+    default:
+      return { title: "MATCH", body: "You have a new notification" };
+  }
+}
+
+async function pushFromNotification(
+  supabaseUrl: string,
+  serviceKey: string,
+  anonKey: string,
+  authHeader: string,
+  role: string,
+  targetUserId: string,
+): Promise<Response> {
+  if (role !== "authenticated") {
+    return json({ error: "notification_for requires a user JWT" }, 403);
+  }
+  const userClient = createClient(supabaseUrl, anonKey, {
+    global: { headers: { Authorization: authHeader } },
+  });
+  const { data: userData, error: userError } = await userClient.auth.getUser();
+  if (userError || !userData.user) {
+    return json({ error: "Invalid user JWT" }, 401);
+  }
+  const callerId = userData.user.id;
+  const admin = createClient(supabaseUrl, serviceKey);
+
+  const since = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+  const { data: rows, error } = await admin
+    .from("notifications")
+    .select("id, user_id, actor_id, type, payload")
+    .eq("user_id", targetUserId)
+    .eq("actor_id", callerId)
+    .is("pushed_at", null)
+    .gte("created_at", since)
+    .order("created_at", { ascending: false })
+    .limit(1);
+  if (error) return json({ error: error.message }, 500);
+  const n = (rows ?? [])[0] as NotificationRow | undefined;
+  if (!n) return json({ ok: true, sent: 0, message: "No pending notification" });
+
+  // Claim it first so retries / races do not double-push.
+  const { data: claimed, error: claimError } = await admin
+    .from("notifications")
+    .update({ pushed_at: new Date().toISOString() })
+    .eq("id", n.id)
+    .is("pushed_at", null)
+    .select("id");
+  if (claimError) return json({ error: claimError.message }, 500);
+  if (!claimed?.length) return json({ ok: true, sent: 0, message: "Already pushed" });
+
+  const [{ data: actor }, { data: tokens, error: tokenError }] = await Promise.all([
+    admin.from("profiles").select("name").eq("id", callerId).maybeSingle(),
+    admin.from("push_tokens").select("token").eq("user_id", targetUserId),
+  ]);
+  if (tokenError) return json({ error: tokenError.message }, 500);
+  const expoTokens = (tokens ?? [])
+    .map((t) => t.token as string)
+    .filter((t) => typeof t === "string" && t.length > 0);
+  if (!expoTokens.length) return json({ ok: true, sent: 0, message: "No push_tokens for user_id" });
+
+  const { title, body } = describe(n, (actor?.name as string) || "Someone");
+  const data: Record<string, unknown> = { type: n.type, notification_id: n.id, ...(n.payload ?? {}) };
+  delete data.preview;
+  return await sendExpo(
+    expoTokens.map((to) => ({ to, title, body, data, sound: "default" as const })),
+  );
+}
