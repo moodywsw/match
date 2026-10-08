@@ -77,6 +77,16 @@ export default ({ config }: ConfigContext): ExpoConfig => {
           microphonePermission: 'Match uses the microphone to record voice messages and the sound of your video stories.',
         },
       ],
+      // LiveKit (real video lives) — native modules, only active in dev/production builds, not Expo Go.
+      ['@livekit/react-native-expo-plugin', { android: { audioType: 'communication' } }],
+      [
+        '@config-plugins/react-native-webrtc',
+        {
+          cameraPermission: 'Match uses the camera when you go live.',
+          microphonePermission: 'Match uses the microphone when you go live or record voice messages.',
+        },
+      ],
+      'expo-dev-client',
       [
         'expo-location',
         {

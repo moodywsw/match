@@ -166,7 +166,7 @@ Store the service role only in Supabase secrets / CI — never in the repo or cl
 | Chat read receipts (✓ sent / ✓✓ read) | **Real** (`mark_conversation_read`; `profiles.read_receipts` toggle off ⇒ `read_at` never written; unread from `conversation_reads`) |
 | Friday answer (own profile edit + others' detail) | **Real** |
 | Expired story media cleanup | **Real** (pg_cron `cleanup-story-media` hourly → Edge Function with runtime service key; cron auth = public anon JWT in Vault `match_cron_anon_key`, not in git) |
-| Live | **Metadata stub** (lists open `live_streams`; no A/V) |
+| Live | **Server-backed**: go live / end, heartbeat viewer counts, realtime room chat, reactions, LIVE MATCH votes (RLS, block-aware, rate limited). **Video via LiveKit** in dev/production builds (`livekit-token` Edge Function; needs LIVEKIT_* secrets); Expo Go shows a "video in the app build" state |
 | Push permission + token → `push_tokens` | **Stub wired** (needs EAS projectId + APNs/FCM to deliver) |
 | IAP / RevenueCat | **Wired** (needs RevenueCat + store accounts; Preview Mode in Expo Go) |
 | EAS dev/preview/production config, icons, splash, permissions | **Ready** (submit IDs are placeholders) |

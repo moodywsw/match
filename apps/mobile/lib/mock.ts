@@ -249,6 +249,11 @@ export type LiveRoom = {
   guest?: { name: string; photo: string | null };
   liveMatch?: boolean;
   isSelf?: boolean;
+  /** Server-backed room (public.live_streams). Demo rooms are local-only previews. */
+  real?: boolean;
+  hostId?: string;
+  guestId?: string | null;
+  reactions?: number;
 };
 
 export const LIVE_ROOMS: LiveRoom[] = [
@@ -263,6 +268,7 @@ export const LIVE_CATS = ['Trending', 'Dating', 'Music', 'Entertainment', 'Talk'
 export const LIVE_CAT_LABEL: Record<string, string> = {
   Trending: '🔥 Trending', Dating: '💘 Dating', Music: '🎵 Music', Entertainment: '😂 Entertainment', Talk: '💬 Talk', Gaming: '🎮 Gaming',
 };
+/** Demo-room chat only (prototype preview rooms); real rooms use public.live_messages. */
 export const LIVE_CHAT = [
   { user: 'Mia', text: 'okay this is actually so cute 🥹' },
   { user: 'Tomas', text: 'team yes!!' },

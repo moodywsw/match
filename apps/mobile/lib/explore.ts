@@ -19,17 +19,6 @@ export type StoryRow = {
   authorName?: string;
 };
 
-export type LiveRow = {
-  id: string;
-  host_id: string;
-  title: string;
-  category: string;
-  is_live_match: boolean;
-  started_at: string;
-  ended_at: string | null;
-  hostName?: string;
-};
-
 export async function fetchUpcomingEvents(limit = 20): Promise<EventRow[]> {
   const { data, error } = await supabase
     .from('events')
@@ -61,21 +50,6 @@ export async function fetchActiveStories(limit = 30): Promise<StoryRow[]> {
   const { data: profiles } = await supabase.from('profiles').select('id, name').in('id', ids);
   const names = Object.fromEntries((profiles || []).map((p) => [p.id, p.name]));
   return data.map((s) => ({ ...s, authorName: names[s.user_id] || 'Member' }));
-}
-
-export async function fetchLiveStreams(limit = 20): Promise<LiveRow[]> {
-  const { data, error } = await supabase
-    .from('live_streams')
-    .select('id, host_id, title, category, is_live_match, started_at, ended_at')
-    .is('ended_at', null)
-    .order('started_at', { ascending: false })
-    .limit(limit);
-  if (error) throw error;
-  if (!data?.length) return [];
-  const ids = [...new Set(data.map((s) => s.host_id))];
-  const { data: profiles } = await supabase.from('profiles').select('id, name').in('id', ids);
-  const names = Object.fromEntries((profiles || []).map((p) => [p.id, p.name]));
-  return data.map((s) => ({ ...s, hostName: names[s.host_id] || 'Host' }));
 }
 
 export async function unrsvpEvent(eventId: string, userId: string): Promise<void> {

@@ -11,8 +11,9 @@ import { T } from '@/constants/theme';
 import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useEvents } from '@/hooks/useEvents';
+import { useLiveRooms } from '@/hooks/useLiveRooms';
 import { fmtEventDate } from '@/lib/events';
-import { hash01, interestIcon, LIVE_ROOMS, type LiveRoom, type Person } from '@/lib/mock';
+import { hash01, interestIcon, type LiveRoom, type Person } from '@/lib/mock';
 
 const CARD_SHADOW = { shadowColor: '#000', shadowOpacity: 0.55, shadowRadius: 20, shadowOffset: { width: 0, height: 18 } };
 
@@ -22,6 +23,7 @@ export default function HomeTab() {
   const { me, people, likedIds, like, reloadPeople, peopleLoading } = useApp();
   const { events } = useEvents();
   const [liveRoom, setLiveRoom] = useState<LiveRoom | null>(null);
+  const { rooms: liveRooms, reload: reloadLive } = useLiveRooms();
 
   const top = useMemo(() => [...people].sort((a, b) => b.match - a.match).slice(0, 3), [people]);
   const trending = useMemo(() => [...people].sort((a, b) => hash01(a.id, 3) - hash01(b.id, 3)).slice(0, 6), [people]);
@@ -60,7 +62,7 @@ export default function HomeTab() {
 
         <SectionTitle title="Live now" action="See all" onAction={() => router.navigate('/(tabs)/live')} />
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -18, marginBottom: 22 }} contentContainerStyle={{ gap: 12, paddingHorizontal: 18, paddingBottom: 4 }}>
-          {LIVE_ROOMS.slice(0, 4).map((r) => (
+          {liveRooms.slice(0, 4).map((r) => (
             <Pressable key={r.id} onPress={() => setLiveRoom(r)} style={{ width: 120, borderWidth: 1, borderColor: T.border, borderRadius: 18, backgroundColor: T.surface, overflow: 'hidden' }}>
               <View style={{ height: 90 }}>
                 <Photo uri={r.cover} style={{ width: '100%', height: '100%' }} />
@@ -134,7 +136,13 @@ export default function HomeTab() {
           ) : null}
         </ScrollView>
       </FadeUp>
-      <LiveRoomView room={liveRoom} onClose={() => setLiveRoom(null)} />
+      <LiveRoomView
+        room={liveRoom}
+        onClose={() => {
+          setLiveRoom(null);
+          void reloadLive();
+        }}
+      />
     </Screen>
   );
 }

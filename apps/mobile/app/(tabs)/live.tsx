@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 import { Radio, Users } from 'lucide-react-native';
 
@@ -8,28 +8,17 @@ import { DarkPill, FadeUp, LiveBadge, Photo } from '@/components/ui/primitives';
 import { Txt } from '@/components/ui/Txt';
 import { T } from '@/constants/theme';
 import { useApp } from '@/contexts/AppContext';
-import { fetchLiveStreams } from '@/lib/explore';
-import { LIVE_CAT_LABEL, LIVE_CATS, LIVE_ROOMS, type LiveRoom } from '@/lib/mock';
+import { useLiveRooms } from '@/hooks/useLiveRooms';
+import { liveErrorMessage, startLive } from '@/lib/live';
+import { LIVE_CAT_LABEL, LIVE_CATS, type LiveRoom } from '@/lib/mock';
 
 export default function LiveTab() {
-  const { me } = useApp();
+  const { me, toast } = useApp();
   const [cat, setCat] = useState('Trending');
   const [showGoLive, setShowGoLive] = useState(false);
+  const [starting, setStarting] = useState(false);
   const [room, setRoom] = useState<LiveRoom | null>(null);
-  const [realRooms, setRealRooms] = useState<LiveRoom[]>([]);
-
-  useEffect(() => {
-    fetchLiveStreams()
-      .then((rows) =>
-        setRealRooms(
-          rows.map((r) => ({ id: r.id, title: r.title, category: r.category, viewers: 1, cover: null, host: { name: r.hostName || 'Host', photo: null }, liveMatch: r.is_live_match }))
-        )
-      )
-      .catch(() => setRealRooms([]));
-  }, []);
-
-  const all = [...realRooms, ...LIVE_ROOMS];
-  const filtered = cat === 'Trending' ? all : all.filter((r) => r.category === cat);
+  const { rooms: filtered, reload } = useLiveRooms(cat);
 
   return (
     <Screen>
@@ -94,12 +83,42 @@ export default function LiveTab() {
       <GoLiveSheet
         visible={showGoLive}
         onClose={() => setShowGoLive(false)}
-        onStart={(title, category) => {
-          setShowGoLive(false);
-          setTimeout(() => setRoom({ id: 'you', title, category, host: { name: 'You', photo: me?.photo ?? null }, cover: me?.photo ?? null, viewers: 1, isSelf: true }), 350);
+        busy={starting}
+        onStart={async (title, category, guest) => {
+          setStarting(true);
+          try {
+            const id = await startLive(title, category, guest?.id ?? null);
+            setShowGoLive(false);
+            const next: LiveRoom = {
+              id,
+              real: true,
+              title,
+              category,
+              host: { name: 'You', photo: me?.photo ?? null },
+              hostId: me?.id,
+              guest: guest ? { name: guest.name, photo: guest.photo } : undefined,
+              guestId: guest?.id ?? null,
+              liveMatch: !!guest,
+              cover: me?.photo ?? null,
+              viewers: 0,
+              reactions: 0,
+              isSelf: true,
+            };
+            setTimeout(() => setRoom(next), 350);
+          } catch (e) {
+            toast(liveErrorMessage(e));
+          } finally {
+            setStarting(false);
+          }
         }}
       />
-      <LiveRoomView room={room} onClose={() => setRoom(null)} />
+      <LiveRoomView
+        room={room}
+        onClose={() => {
+          setRoom(null);
+          void reload();
+        }}
+      />
     </Screen>
   );
 }

@@ -147,6 +147,39 @@ except the "why you match" teaser, which is computed on the device.
 - [ ] Optional: upgrade the plan for daily backups or PITR. The privacy policy promises a
       backup retention window.
 
+## 4b. LiveKit (real video in Live rooms)
+
+Live rooms already work without LiveKit. Rooms, viewers, chat, reactions and LIVE MATCH votes
+all run on Supabase. Video needs LiveKit and a development or production build, because
+Expo Go can't load the WebRTC native modules. In Expo Go the room shows "Video live is
+available in the app build".
+
+- [ ] Create a LiveKit Cloud project at https://cloud.livekit.io (or self-host LiveKit). The
+      free tier is fine for testing. Under Settings → Keys, create an API key and secret.
+- [ ] Set the Edge Function secrets. Never commit these values:
+      ```bash
+      supabase secrets set --project-ref pkpdheytmbwvqhpcaigm \
+        LIVEKIT_API_KEY=... LIVEKIT_API_SECRET=... LIVEKIT_URL=wss://<project>.livekit.cloud
+      ```
+      You can also set them in the Dashboard under Edge Functions → Secrets. Until all three
+      exist, `livekit-token` returns `503 livekit_not_configured` and the app shows "Video is
+      being set up".
+- [ ] Build a dev client with the native modules (`@livekit/react-native-expo-plugin` and
+      `@config-plugins/react-native-webrtc` are already in `app.config.ts`):
+      `eas build -p ios --profile development-device` and `eas build -p android --profile development`.
+- [ ] Test on two physical devices. Device A goes live (camera and mic permission prompts).
+      Device B opens the room and should see video. A blocked user must not see the room at
+      all.
+- [ ] Optional: in the LiveKit dashboard, add a webhook for room analytics or recording. The
+      app doesn't depend on one.
+- [ ] Store review notes: mention that live video uses the camera and microphone only while
+      the user is live (the permission strings are already set).
+
+How it works: `public.get_live_token_grant(stream_id)` checks that the stream is active and
+that the caller isn't blocked either way. The host and the LIVE MATCH guest get
+`canPublish`; viewers subscribe only. The Edge Function signs a 2-hour HS256 LiveKit token
+for room `match-live-<stream_id>`.
+
 ## 5. Legal
 
 - [ ] Have a lawyer review `docs/legal/*.md`, which are PT and EN drafts. The in-app copy is
@@ -160,12 +193,13 @@ except the "why you match" teaser, which is computed on the device.
 
 ## 6. Builds and submission (EAS)
 
-Install the dev client only when you move off Expo Go, because it changes how `expo start`
-behaves:
+`expo-dev-client` is already installed (LiveKit needs a development build). With it installed,
+plain `npx expo start` serves the **development build** by default. To keep using Expo Go, start
+Metro with `--go`, e.g. `npx expo start --tunnel --go`. Pressing `s` in the Metro terminal also
+switches between the two modes.
 
 ```bash
 cd apps/mobile
-npx expo install expo-dev-client          # required for the "development" profiles
 npm i -g eas-cli && eas login
 eas whoami                                # must have access to moidys-team
 
