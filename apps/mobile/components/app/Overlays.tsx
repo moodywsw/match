@@ -1,5 +1,6 @@
 import { Check, Crown, Eye, EyeOff, RotateCcw, X, Zap } from 'lucide-react-native';
-import { useState, type ReactNode } from 'react';
+import { useRouter } from 'expo-router';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -7,7 +8,7 @@ import { CenterModal, Sheet } from '@/components/ui/Sheet';
 import { IconBtn, PrimaryButton, TextButton } from '@/components/ui/primitives';
 import { Txt } from '@/components/ui/Txt';
 import { T } from '@/constants/theme';
-import { purchaseEntitlement, type EntitlementId } from '@/lib/iap';
+import { fallbackPrice, fetchOfferingPrices, getIapStatus, purchaseEntitlement, restorePurchases, type EntitlementId, type Tier } from '@/lib/iap';
 import { NOTIFS } from '@/lib/mock';
 
 export type NotifItem = { id?: string; icon: string; text: string; time: string; unread?: boolean; onPress?: () => void };
@@ -70,16 +71,90 @@ const PLANS: Record<EntitlementId, { name: string; price: string; color: string;
   super_match: { name: 'SUPER MATCH', price: '€24.99/mo', color: T.amber, features: ['Everything in MATCH+', 'Incognito mode', 'Unlimited messages', 'Weekly profile boost', 'Exclusive events access'] },
 };
 
-export function PremiumModal({ visible, onClose, toast }: { visible: boolean; onClose: () => void; toast: (m: string) => void }) {
-  const [plan, setPlan] = useState<EntitlementId>('match_plus');
+export function PremiumModal({
+  visible,
+  onClose,
+  toast,
+  tier = 'free',
+  initialPlan = 'match_plus',
+  refreshTier,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  toast: (m: string) => void;
+  tier?: Tier;
+  initialPlan?: EntitlementId;
+  refreshTier?: () => Promise<Tier>;
+}) {
+  const router = useRouter();
+  const [plan, setPlan] = useState<EntitlementId>(initialPlan);
   const [busy, setBusy] = useState(false);
+  const [restoring, setRestoring] = useState(false);
+  const [prices, setPrices] = useState<Partial<Record<EntitlementId, string>>>({});
+  const status = getIapStatus();
   const p = PLANS[plan];
+  const current = tier === plan || (tier === 'super_match' && plan === 'match_plus');
+
+  useEffect(() => {
+    if (!visible) return;
+    setPlan(initialPlan);
+    let alive = true;
+    void fetchOfferingPrices().then((pr) => alive && setPrices(pr));
+    return () => {
+      alive = false;
+    };
+  }, [visible, initialPlan]);
+
+  /** The webhook is the source of truth — wait for it to land (≤ ~20s). */
+  async function waitForEntitlement(want: EntitlementId): Promise<boolean> {
+    if (!refreshTier) return false;
+    for (let i = 0; i < 10; i++) {
+      const t = await refreshTier();
+      if (t === want || t === 'super_match') return true;
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+    return false;
+  }
+
   async function onContinue() {
+    if (current) return onClose();
     setBusy(true);
     const res = await purchaseEntitlement(plan);
+    if (!res.ok) {
+      setBusy(false);
+      if (res.cancelled) return;
+      toast(status.configured ? res.error : 'In-app purchases arrive with the App Store release ✨');
+      return;
+    }
+    const ok = await waitForEntitlement(plan);
     setBusy(false);
-    if (!res.ok) toast('In-app purchases arrive with the App Store release ✨');
+    if (ok) {
+      toast(`Welcome to ${p.name} ✨`);
+      onClose();
+    } else {
+      toast(status.preview ? 'Simulated purchase done — entitlements activate in a store build' : 'Purchase received — activating shortly');
+    }
   }
+
+  async function onRestore() {
+    setRestoring(true);
+    const res = await restorePurchases();
+    if (!res.ok) {
+      setRestoring(false);
+      toast(status.configured ? res.error : 'Restore arrives with the App Store release');
+      return;
+    }
+    const t = refreshTier ? await refreshTier() : 'free';
+    setRestoring(false);
+    toast(t === 'free' ? 'No active subscription found' : 'Purchases restored ✨');
+    if (t !== 'free') onClose();
+  }
+
+  function openLegal(path: '/legal/terms' | '/legal/privacy') {
+    onClose();
+    router.push(path);
+  }
+
   return (
     <Sheet visible={visible} onClose={onClose} scrim={T.scrimDeep} maxHeight="88%">
       <View style={{ alignItems: 'center', marginBottom: 20 }}>
@@ -101,8 +176,13 @@ export function PremiumModal({ visible, onClose, toast }: { visible: boolean; on
                 {pl.name}
               </Txt>
               <Txt v="mono" size={15} color={pl.color} style={{ marginTop: 6 }}>
-                {pl.price}
+                {prices[key] ? `${prices[key]}/mo` : fallbackPrice(key)}
               </Txt>
+              {tier === key ? (
+                <Txt size={10.5} w={700} color={pl.color} style={{ marginTop: 4 }}>
+                  Current plan
+                </Txt>
+              ) : null}
             </Pressable>
           );
         })}
@@ -121,8 +201,26 @@ export function PremiumModal({ visible, onClose, toast }: { visible: boolean; on
         <FeatureIcon icon={<RotateCcw size={16} color={T.amber} />} label="Rewind" />
         <FeatureIcon icon={<EyeOff size={16} color={T.amber} />} label="Incognito" />
       </View>
-      <PrimaryButton label={`Continue with ${p.name}`} colors={[p.color, T.rose]} onPress={onContinue} loading={busy} />
-      <TextButton label="Maybe later" onPress={onClose} size={13} />
+      {status.preview ? (
+        <Txt size={11} color={T.mutedDim} center style={{ marginBottom: 8 }}>
+          Expo Go preview — purchases are simulated, no money is charged.
+        </Txt>
+      ) : null}
+      <PrimaryButton label={current ? `You have ${p.name}` : `Continue with ${p.name}`} colors={[p.color, T.rose]} onPress={onContinue} loading={busy} />
+      <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 18 }}>
+        <TextButton label={restoring ? 'Restoring…' : 'Restore purchases'} onPress={onRestore} size={12.5} />
+        <TextButton label="Maybe later" onPress={onClose} size={12.5} />
+      </View>
+      <Txt size={10} color={T.mutedDim} center style={{ marginTop: 2, lineHeight: 14 }}>
+        Subscriptions renew monthly until cancelled in your App Store / Google Play settings.{' '}
+        <Txt size={10} color={T.muted} onPress={() => openLegal('/legal/terms')}>
+          Terms
+        </Txt>
+        {' · '}
+        <Txt size={10} color={T.muted} onPress={() => openLegal('/legal/privacy')}>
+          Privacy
+        </Txt>
+      </Txt>
     </Sheet>
   );
 }

@@ -7,6 +7,7 @@ import { Sheet } from '@/components/ui/Sheet';
 import { Avatar, Chip, MatchRing, Photo, PrimaryButton, SettingRow } from '@/components/ui/primitives';
 import { Txt } from '@/components/ui/Txt';
 import { T } from '@/constants/theme';
+import { useApp } from '@/contexts/AppContext';
 import { INTENTIONS, pseudoPos, type EventItem, type Person } from '@/lib/mock';
 import { REPORT_CATEGORIES, type ReportCategory } from '@/lib/safety';
 
@@ -80,6 +81,7 @@ export function CompatibilitySheet({ profile, onClose }: { profile: Person | nul
 export type Filters = { maxDistance: number; verifiedOnly: boolean; intention: string | null };
 
 export function FiltersSheet({ visible, filters, onClose, onApply }: { visible: boolean; filters: Filters; onClose: () => void; onApply: (f: Filters) => void }) {
+  const { requirePremium, tier } = useApp();
   const [local, setLocal] = useState(filters);
   useEffect(() => {
     if (visible) setLocal(filters);
@@ -111,10 +113,26 @@ export function FiltersSheet({ visible, filters, onClose, onApply }: { visible: 
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 18 }}>
         <Chip label="Any" active={!local.intention} onPress={() => setLocal((l) => ({ ...l, intention: null }))} />
         {INTENTIONS.map((i) => (
-          <Chip key={i.code} label={i.label} active={local.intention === i.code} onPress={() => setLocal((l) => ({ ...l, intention: i.code }))} />
+          <Chip
+            key={i.code}
+            label={i.label}
+            active={local.intention === i.code}
+            onPress={() => {
+              if (!requirePremium('match_plus', 'Intention filters are part of MATCH+')) return;
+              setLocal((l) => ({ ...l, intention: i.code }));
+            }}
+          />
         ))}
       </View>
-      <SettingRow icon={<BadgeCheck size={16} color={T.text} />} label="Verified profiles only" active={local.verifiedOnly} onPress={() => setLocal((l) => ({ ...l, verifiedOnly: !l.verifiedOnly }))} />
+      <SettingRow
+        icon={<BadgeCheck size={16} color={T.text} />}
+        label={tier === 'free' ? 'Verified profiles only (MATCH+)' : 'Verified profiles only'}
+        active={local.verifiedOnly}
+        onPress={() => {
+          if (!local.verifiedOnly && !requirePremium('match_plus', 'Verified-only filter is part of MATCH+')) return;
+          setLocal((l) => ({ ...l, verifiedOnly: !l.verifiedOnly }));
+        }}
+      />
       <PrimaryButton label="Apply filters" onPress={() => onApply(local)} style={{ marginTop: 20 }} />
     </Sheet>
   );

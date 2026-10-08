@@ -13,7 +13,9 @@ import { fetchInterestLabelsForUsers } from '@/lib/interests';
 import { DEMO_MATCHED_IDS, PROFILES, SHOW_DEMO_CONTENT, type Person } from '@/lib/mock';
 import { ageFromBirthDate, fetchDiscoverDeck, fetchPrimaryPhotos, sendLike } from '@/lib/profile';
 import { fetchInbox, inboxIcon, inboxText, markAllRead, subscribeInbox, timeAgo, type InboxItem } from '@/lib/inbox';
+import { configureIap, fetchServerTier, type EntitlementId, type Tier } from '@/lib/iap';
 import { pushLatestNotification } from '@/lib/push';
+import { supabase } from '@/lib/supabase';
 
 type MatchState = { data: MatchOverlayData; person: Person; matchId: string | null };
 
@@ -41,6 +43,11 @@ type AppContextValue = {
   /** Real notifications (DB triggers) + unread badge count. */
   inbox: InboxItem[];
   unreadCount: number;
+  /** Server-side entitlement (public.subscriptions via get_my_tier). */
+  tier: Tier;
+  refreshTier: () => Promise<Tier>;
+  /** True when entitled; otherwise opens the paywall (with a reason toast) and returns false. */
+  requirePremium: (min: EntitlementId, reason?: string) => boolean;
 };
 
 const Ctx = createContext<AppContextValue | undefined>(undefined);
@@ -60,6 +67,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [match, setMatch] = useState<MatchState | null>(null);
   const [notifOpen, setNotifOpen] = useState(false);
   const [premiumOpen, setPremiumOpen] = useState(false);
+  const [premiumPlan, setPremiumPlan] = useState<EntitlementId>('match_plus');
+  const [tier, setTier] = useState<Tier>('free');
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const toastAnim = useRef(new Animated.Value(0)).current;
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -75,6 +84,51 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       toastTimer.current = setTimeout(() => setToastMsg(null), 2200);
     },
     [toastAnim]
+  );
+
+  /* ---------- subscriptions / entitlement ---------- */
+  const refreshTier = useCallback(async (): Promise<Tier> => {
+    if (!user?.id) {
+      setTier('free');
+      return 'free';
+    }
+    const t = await fetchServerTier();
+    setTier(t);
+    return t;
+  }, [user?.id]);
+
+  useEffect(() => {
+    void configureIap(user?.id ?? null);
+    if (!user?.id) {
+      setTier('free');
+      return;
+    }
+    void refreshTier();
+    const ch = supabase
+      .channel(`subs:${user.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'subscriptions', filter: `user_id=eq.${user.id}` }, () => {
+        void refreshTier();
+      })
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(ch);
+    };
+  }, [user?.id, refreshTier]);
+
+  const openPaywall = useCallback((plan: EntitlementId = 'match_plus') => {
+    setPremiumPlan(plan);
+    setPremiumOpen(true);
+  }, []);
+
+  const requirePremium = useCallback(
+    (min: EntitlementId, reason?: string) => {
+      const ok = min === 'match_plus' ? tier !== 'free' : tier === 'super_match';
+      if (ok) return true;
+      if (reason) toast(reason);
+      openPaywall(min);
+      return false;
+    },
+    [tier, toast, openPaywall]
   );
 
   const refreshMe = useCallback(async () => {
@@ -172,11 +226,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           n.delete(p.id);
           return n;
         });
-        const msg = err instanceof Error ? err.message : 'Could not send like';
-        toast(msg.includes('duplicate') ? `You already liked ${p.name}` : msg);
+        const msg = err instanceof Error ? err.message : String((err as { message?: string })?.message ?? 'Could not send like');
+        if (msg.includes('daily_like_limit')) {
+          toast("You're out of likes for today — MATCH+ is unlimited");
+          openPaywall('match_plus');
+        } else if (msg.includes('super_like_limit')) {
+          toast('No super likes left today');
+          openPaywall(tier === 'match_plus' ? 'super_match' : 'match_plus');
+        } else {
+          toast(msg.includes('duplicate') ? `You already liked ${p.name}` : msg);
+        }
       }
     },
-    [user?.id, likedIds, myPhoto, profile?.name, toast]
+    [user?.id, likedIds, myPhoto, profile?.name, toast, openPaywall, tier]
   );
 
   const pass = useCallback((p: Person) => setPassedIds((s) => new Set(s).add(p.id)), []);
@@ -278,11 +340,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       resetDeck,
       toast,
       openNotifications: () => setNotifOpen(true),
-      openPremium: () => setPremiumOpen(true),
+      openPremium: () => openPaywall('match_plus'),
       inbox,
       unreadCount,
+      tier,
+      refreshTier,
+      requirePremium,
     }),
-    [me, refreshMe, people, peopleLoading, peopleError, reloadPeople, personById, likedIds, passedIds, demoMatchedIds, like, pass, removePerson, resetDeck, toast, inbox, unreadCount]
+    [me, refreshMe, people, peopleLoading, peopleError, reloadPeople, personById, likedIds, passedIds, demoMatchedIds, like, pass, removePerson, resetDeck, toast, inbox, unreadCount, tier, refreshTier, requirePremium, openPaywall]
   );
 
   return (
@@ -290,7 +355,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       {children}
       <MatchOverlay data={match?.data ?? null} onClose={() => setMatch(null)} onMessage={onMatchMessage} />
       <NotificationsPanel visible={notifOpen} onClose={closeNotifications} items={notifItems} demoFallback={SHOW_DEMO_CONTENT} />
-      <PremiumModal visible={premiumOpen} onClose={() => setPremiumOpen(false)} toast={toast} />
+      <PremiumModal visible={premiumOpen} onClose={() => setPremiumOpen(false)} toast={toast} tier={tier} initialPlan={premiumPlan} refreshTier={refreshTier} />
       {toastMsg ? (
         <View pointerEvents="none" style={styles.toastWrap}>
           <Animated.View
