@@ -157,6 +157,8 @@ Store the service role only in Supabase secrets / CI — never in the repo or cl
 | Friday answer (own profile edit + others' detail) | **Real** |
 | Expired story media cleanup | **Real** (pg_cron `cleanup-story-media` hourly → Edge Function with runtime service key; cron auth = public anon JWT in Vault `match_cron_anon_key`, not in git) |
 | Live | **Server-backed**: go live / end, heartbeat viewer counts, realtime room chat, reactions, LIVE MATCH votes (RLS, block-aware, rate limited). **Video via LiveKit** in dev/production builds (`livekit-token` Edge Function; needs LIVEKIT_* secrets); Expo Go shows a "video in the app build" state |
+| Video / voice calls between matches | **Real** in the installed app (LiveKit, `calls` table + Realtime signalling, missed-call chat message + inbox + push). Expo Go shows "video calls work in the installed app". Rings only while the app is open (no CallKit / ConnectionService yet) |
+| MATCH coins wallet + live gifts | **Real** server side (append-only ledger, atomic gift debit/credit, leaderboard, realtime gift animations). Coin packs need the store products + RevenueCat (`docs/STORE_CHECKLIST.md` §3b); disabled in Expo Go. Diamonds: no cash-out yet |
 | Push permission + token → `push_tokens` | **Stub wired** (needs EAS projectId + APNs/FCM to deliver) |
 | IAP / RevenueCat | **Wired** (needs RevenueCat + store accounts; Preview Mode in Expo Go) |
 | EAS dev/preview/production config, icons, splash, permissions | **Ready** (submit IDs are placeholders) |

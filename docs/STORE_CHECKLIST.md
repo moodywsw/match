@@ -72,7 +72,8 @@ bundle id / package `com.moidy.match` · Supabase project `pkpdheytmbwvqhpcaigm`
 The paywall copy lives in `apps/mobile/lib/plans.ts` (pt-PT / EN). Store descriptions must
 not promise anything the app doesn't deliver (App Review 3.1.2 / Play subscriptions policy).
 There is **no "unlimited messages" perk** — messaging is free for every match. Boosts and
-super likes are included in the subscriptions; there are **no consumable products**.
+super likes are included in the subscriptions. The only consumables are the **MATCH coin
+packs** used for live gifts (section 3b). Coins never unlock subscription perks.
 
 | | Free | MATCH+ (`match_plus_monthly`) | SUPER MATCH (`super_match_monthly`) |
 |---|---|---|---|
@@ -100,7 +101,8 @@ except the "why you match" teaser, which is computed on the device.
 - [ ] Create the RevenueCat project "MATCH" and add the iOS app with bundle id `com.moidy.match`
       (App Store Connect API key + in-app purchase key) and the Android app with package
       `com.moidy.match` (service-account JSON). RevenueCat apps are tied to these identifiers.
-- [ ] Products: import the 4 store products from steps 1 and 2.
+- [ ] Products: import the subscription products from steps 1 and 2, plus the 3 coin packs
+      from section 3b.
 - [ ] **Entitlements**: the ids must be exactly the following, because the DB and the
       webhook depend on them:
   - `match_plus` → attach `match_plus_monthly` (iOS + Android) **and** `super_match_monthly`
@@ -133,6 +135,69 @@ except the "why you match" teaser, which is computed on the device.
 - [ ] Optional: when an account is deleted, also delete the RevenueCat customer
       (`DELETE /v1/subscribers/{uid}` with the secret key). This isn't wired up; it could be
       added to `delete-account` once `REVENUECAT_SECRET_API_KEY` exists.
+
+## 3b. MATCH coins (consumables) and live gifts
+
+Viewers buy **coins** and spend them on gifts in lives. The host earns **diamonds** (a separate
+earned balance). Everything except the store setup is already built:
+`supabase/migrations/20261008_wallet_gifts.sql`, `revenuecat-webhook`, Profile → Wallet, and the
+🎁 button in live rooms.
+
+**Products** (prices are your call, TBD; suggested tiers in brackets):
+
+| Product id (identical on iOS + Android) | Coins | Type | Suggested price |
+|---|---|---|---|
+| `coins_100` | 100 | Consumable | (€0.99–1.49) |
+| `coins_550` | 550 | Consumable | (€4.99–5.99) |
+| `coins_1200` | 1200 | Consumable | (€9.99–11.99) |
+
+- [ ] App Store Connect → In-App Purchases → **Consumable** for each id above. Add a display
+      name ("100 MATCH coins"), a review screenshot of the Wallet sheet, and a review note:
+      "Coins are spent on virtual gifts in live rooms. They can't be exchanged for money."
+- [ ] Play Console → Monetize → Products → **In-app products** (one-time) with the same ids.
+      RevenueCat consumes them, so they can be bought again.
+- [ ] RevenueCat → Products: add the three products. **Don't attach them to any
+      entitlement.** The app loads them by product id (`getProducts`), so no offering is
+      needed.
+- [ ] To change the coin amount of a pack, edit `public.coin_packs`. The webhook credits
+      what is in that table, not what the client says.
+- [ ] Test: make a sandbox purchase on the installed build. The webhook receives
+      `NON_RENEWING_PURCHASE` and calls `credit_coin_purchase`, which is idempotent per store
+      transaction id. The Wallet sheet should show the coins within a few seconds. A refund
+      arrives as `CANCELLATION` and calls `reverse_coin_purchase`, which takes back whatever
+      is still unspent.
+- [ ] Before the store products exist, grant test coins from the SQL editor (it runs as
+      postgres, so it goes straight to the ledger function):
+      `select private.wallet_apply('<user id>', 'coins', 500, 'adjustment', null, null, null, null, 'test coins');`
+      Signed-in admins can also call `public.admin_grant_coins(user, amount, note)` (max ±100k).
+
+In Expo Go, or when the RevenueCat key is missing, the packs are shown but disabled. Gifts
+still work with coins already in the wallet.
+
+**Store fees.** Apple and Google take **15–30 %** of every coin purchase: 15 % under the Small
+Business Program / Play's first $1M tier, otherwise 30 %. Price the packs knowing that
+roughly €0.70–0.85 of each euro reaches you, before VAT, which the stores deduct per country.
+Digital goods consumed in-app **must** use store billing (App Review 3.1.1, Play Payments
+policy). No external links or web checkout for coins inside the app, except where a region
+explicitly allows it.
+
+**Creator payouts: not built, and deliberately so.** Diamonds are shown with "payouts
+coming soon" and can't be cashed out. Before you turn payouts on:
+- Store rules: App Review 3.1.1 lets apps use in-app purchase currencies to "tip" digital
+  content providers, and Google Play's payments policy treats virtual gifts the same way.
+  Coins themselves must stay IAP-only and must never be redeemable for cash or transferable
+  outside gifts. Read the current wording of 3.1.1, 3.2.1 and 3.2.2 and Play's Payments and
+  "Real-money gambling, games and contests" policies when payouts are designed. They change
+  often, and creator cash-outs get extra review scrutiny (disclose your cut in the app).
+- You become a payment intermediary. You need KYC/identity checks, tax forms (EU DAC7
+  reporting for platform sellers, VAT treatment), AML checks, minimum payout thresholds, and a
+  payment partner such as Stripe Connect or PayPal Payouts. That needs legal and accounting
+  sign-off in Portugal/EU.
+- Update the Terms: virtual currency clause, no cash value, expiry, refunds, and abuse or
+  chargeback clawback (the ledger already records `purchase_reversal`).
+- Fraud: gifting between accounts you control is the classic laundering path for stolen
+  cards. Keep the server-side rate limits (30 gifts per minute, 1000 per day), require a
+  holding period before diamonds become withdrawable, and review large gifters.
 
 ## 4. Supabase (before launch)
 
@@ -181,6 +246,25 @@ How it works: `public.get_live_token_grant(stream_id)` checks that the stream is
 that the caller isn't blocked either way. The host and the LIVE MATCH guest get
 `canPublish`; viewers subscribe only. The Edge Function signs a 2-hour HS256 LiveKit token
 for room `match-live-<stream_id>`.
+
+## 4c. Video and voice calls between matches
+
+1:1 calls use the same LiveKit project and secrets as lives (section 4b). There's nothing extra to
+configure. Calls are JS-only on top of the LiveKit and WebRTC modules that are already in the
+APK, so they ship by OTA.
+
+- Calls happen in the room `match-call-<call id>`. `livekit-token` with `{call_id}` checks via
+  `get_call_token_grant` that only the caller and callee get a token, that neither has blocked
+  the other, that the call is ringing (caller) or accepted, and limits it to 60 tokens per
+  hour. Voice calls can publish the microphone only.
+- **Limitation:** an incoming call rings only while MATCH is open (foreground, via Realtime).
+  Ringing a closed or locked phone needs native CallKit (iOS) or ConnectionService
+  (Android) plus VoIP/high-priority FCM pushes, for example `react-native-callkeep` with a
+  VoIP push setup. That is a native change and needs a new build. Until then the callee gets
+  a "Missed video call" chat message, an inbox entry and a push (the push needs FCM on Android,
+  see 6b).
+- Store review: the camera and microphone strings already cover calls. Mention in the review
+  notes that calls are only possible between two users who matched each other.
 
 ## 5. Legal
 

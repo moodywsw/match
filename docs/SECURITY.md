@@ -52,6 +52,8 @@ itself, not by client code:
 - `photos.url` must point at the owner's own folder in the `profile-photos` bucket (no hotlinking of arbitrary URLs). There's a maximum of 9 photos per user.
 - `subscriptions` and `payments` can't be written by clients at all. The RevenueCat webhook writes them with the service role.
 - `live_streams`, `live_viewers` and `live_match_votes` aren't writable directly. Everything goes through the RPCs (`start_live`, `join_live`, `vote_live_match`, …).
+- `calls` has SELECT for the two parties only and no client write grants. `start_call`, `answer_call`, `end_call` and `call_heartbeat` (SECURITY DEFINER) check membership in the match's conversation, blocks, hidden users and a busy state. Call summaries in chat (`messages.type = 'call'`) are written only by `private.finish_call`. The message INSERT policy only allows `text` / `image` / `voice`, and the column grant no longer lets clients set `read_at`, `is_priority` or `created_at`.
+- **Wallet**: `wallets`, `wallet_transactions`, `gift_events`, `coin_packs` and `gifts` are SELECT-only for clients (own rows for wallet and ledger). Balances change only in `private.wallet_apply` (SECURITY DEFINER), which is called by `send_live_gift` (debits coins and credits the host's diamonds in one transaction, with no self-gifting and the live active and visible), `admin_grant_coins` (admins only) and `credit_coin_purchase` / `reverse_coin_purchase` (EXECUTE for **service_role only**, used by the RevenueCat webhook). The ledger is append-only: a trigger rejects UPDATE, and DELETE except through account deletion. `balance_after >= 0` and `CHECK (coins >= 0)` make overdrafts impossible. Purchases are unique per `(store_transaction_id, kind)`, which makes webhook retries idempotent.
 
 ## Rate limits (server-side)
 
@@ -78,6 +80,9 @@ app maps to a friendly toast.
 | Live chat | 20 per minute |
 | Live reactions | 60 calls per minute (at most 20 hearts per call) |
 | LIVE MATCH votes | 30 per minute |
+| Call attempts (`start_call`) | 8 per 10 minutes, 60 per day |
+| Call tokens (`livekit-token` with `call_id`) | 60 per hour |
+| Live gifts (`send_live_gift`) | 30 per minute, 1000 per day; quantity 1–99 |
 
 ## Input validation
 
@@ -143,9 +148,9 @@ Expired story media is deleted hourly by the `cleanup-story-media` function and 
 | Function | JWT | Notes |
 |---|---|---|
 | `send-push` | verify_jwt | Users can only push a DB-written notification (`notification_for`) or an event change (`event_notifications`). Title and body are built server-side, and ids are validated as UUIDs. Free-form `{user_id,title,body}` is service-role only. |
-| `livekit-token` | verify_jwt | Validates the `stream_id` UUID. `get_live_token_grant` checks that the room is active and that nobody is blocked. Only the host and the LIVE MATCH guest can publish. Returns 503 until the `LIVEKIT_*` secrets exist. |
+| `livekit-token` | verify_jwt | Validates the `stream_id` or `call_id` UUID. For lives, `get_live_token_grant` checks that the room is active and that nobody is blocked; only the host and the LIVE MATCH guest can publish. For calls, `get_call_token_grant` serves only the two parties, never when blocked, and only while ringing (caller) or accepted (410 `call_ended` otherwise); voice calls can publish the microphone only. Returns 503 until the `LIVEKIT_*` secrets exist. |
 | `delete-account` | verify_jwt | Needs `{confirm:"DELETE"}`. Deletes the caller's storage objects and auth user; their data cascades. |
-| `revenuecat-webhook` | shared secret | Constant-time compare against `REVENUECAT_WEBHOOK_SECRET`. Returns 503 until it's set. |
+| `revenuecat-webhook` | shared secret | Constant-time compare against `REVENUECAT_WEBHOOK_SECRET`. Returns 503 until it's set. Coin packs (`coin_packs` product ids) are credited only on `NON_RENEWING_PURCHASE` via the service-role-only `credit_coin_purchase` (idempotent per transaction). `CANCELLATION` reverses them. |
 | `cleanup-story-media` | verify_jwt | Idempotent garbage collection of orphaned story files, triggered by pg_cron. |
 
 ## Tests
@@ -154,6 +159,8 @@ Expired story media is deleted hourly by the `cleanup-story-media` function and 
   `authenticated` users. It covers privacy (DOB, column grants, blocks, outsiders), escalation
   attempts (self-verify, report status, unhiding), moderation auto-hide, capacity, live grants,
   rate limits, anon lockout and push-token handoff. It finishes with `ALL_TESTS_PASSED:`.
+- `supabase/tests/calls.sql`: call signalling covering outsiders, forged rows and messages, busy, token rules, accept/end, missed and declined calls, expiry, blocks and rate limits.
+- `supabase/tests/wallet_gifts.sql`: client write lockdown, admin grants, idempotent purchase credit, gifts (atomic debit and credit, insufficient coins, no self-gifting, ended live, rate limit, quantity cap), append-only ledger, refund reversal and non-admin denial.
 - `apps/mobile/test`: Jest smoke tests that render every route through the real auth gate and
   providers with a mocked Supabase, plus the Expo Go live-room gating.
 
