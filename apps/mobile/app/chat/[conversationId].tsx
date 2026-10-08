@@ -19,6 +19,7 @@ import { fetchInterestLabelsForUsers } from '@/lib/interests';
 import { avatar, CHAT_PREVIEWS, intentionLabel, PROFILES } from '@/lib/mock';
 import { pushLatestNotification } from '@/lib/push';
 import { blockUser, reportUser } from '@/lib/safety';
+import { friendlyError } from '@/lib/errors';
 
 type Msg = {
   id: string;
@@ -211,7 +212,7 @@ export default function ChatScreen() {
             });
         }
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load chat');
+        if (!cancelled) setError(friendlyError(err, 'Failed to load chat'));
       }
     })();
     const unsub = subscribeToMessages(
@@ -288,7 +289,7 @@ export default function ChatScreen() {
       setInput('');
       void pushLatestNotification(peer?.id);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Send failed');
+      setError(friendlyError(err, 'Send failed'));
     } finally {
       setSending(false);
     }
@@ -313,7 +314,7 @@ export default function ChatScreen() {
       void pushLatestNotification(peer?.id);
     } catch (err) {
       setMessages((prev) => prev.filter((x) => x.id !== tempId));
-      toast(err instanceof Error ? err.message : 'Upload failed');
+      toast(friendlyError(err, 'Upload failed'));
     }
   };
 
@@ -343,7 +344,7 @@ export default function ChatScreen() {
       const ok = await voice.start();
       if (!ok) toast('Allow microphone access to record voice notes');
     } catch (err) {
-      toast(err instanceof Error ? err.message : 'Could not start recording');
+      toast(friendlyError(err, 'Could not start recording'));
     }
   };
   const finishVoice = async () => {
@@ -353,7 +354,7 @@ export default function ChatScreen() {
       if (!clip) return toast('Hold on a little longer — that was too short');
       void sendMedia({ type: 'voice', uri: clip.uri, mime: 'audio/m4a', durationMs: clip.durationMs, waveform: clip.waveform });
     } catch (err) {
-      toast(err instanceof Error ? err.message : 'Recording failed');
+      toast(friendlyError(err, 'Recording failed'));
     } finally {
       setVoiceSending(false);
     }
@@ -490,7 +491,7 @@ export default function ChatScreen() {
             toast(`${peer.name} blocked`);
             router.back();
           } catch (err) {
-            toast(err instanceof Error ? err.message : 'Block failed');
+            toast(friendlyError(err, 'Block failed'));
           }
         }}
         onReport={async (category, details) => {
@@ -500,7 +501,7 @@ export default function ChatScreen() {
             setSafetyOpen(false);
             toast('Report submitted — thank you');
           } catch (err) {
-            toast(err instanceof Error ? err.message : 'Report failed');
+            toast(friendlyError(err, 'Report failed'));
           }
         }}
       />

@@ -13,6 +13,7 @@ import { T } from '@/constants/theme';
 import { useApp } from '@/contexts/AppContext';
 import { useEvents, type EventFilters } from '@/hooks/useEvents';
 import { EVENT_CATEGORIES, eventPlace, fmtEventDate, type EventDetail, type RsvpStatus } from '@/lib/events';
+import { friendlyError } from '@/lib/errors';
 
 export default function EventsTab() {
   const router = useRouter();
@@ -40,7 +41,7 @@ export default function EventsTab() {
       const now = await rsvp(e, s);
       toast(now === 'going' ? `You're going to ${e.title} 🎉` : now === 'interested' ? `Saved — we'll keep you posted` : 'Removed from your events');
     } catch (err) {
-      toast(err instanceof Error ? err.message : 'RSVP failed');
+      toast(friendlyError(err, 'RSVP failed'));
     } finally {
       setBusy(null);
     }

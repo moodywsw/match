@@ -87,39 +87,46 @@ export const INTENTION_LABELS: Record<string, string> = {
   figuring_out: 'Still figuring it out',
 };
 
-export async function fetchOwnProfile(userId: string): Promise<Profile | null> {
-  const { data, error } = await supabase
-    .from('profiles')
-    .select(
-      'id, name, birth_date, gender, city, bio, intention, friday_answer, verified, is_discoverable, onboarding_complete, created_at, updated_at'
-    )
-    .eq('id', userId)
-    .maybeSingle();
+const OWN_PROFILE_COLS =
+  'id, name, birth_date, gender, city, bio, intention, friday_answer, verified, is_discoverable, onboarding_complete, created_at, updated_at';
+
+/**
+ * Own full profile. Private columns (birth_date, gender, settings) are not selectable on the
+ * table (column-level grants hide them from other members), so read them through the
+ * `get_my_profile` RPC, which only ever returns the caller's row.
+ */
+async function fetchOwnRow<T>(cols: string): Promise<T | null> {
+  const { data, error } = await supabase.rpc('get_my_profile').select(cols).maybeSingle();
   if (error) throw error;
-  return data;
+  return (data as T | null) ?? null;
 }
 
+export async function fetchOwnProfile(_userId: string): Promise<Profile | null> {
+  return fetchOwnRow<Profile>(OWN_PROFILE_COLS);
+}
+
+/**
+ * Update own profile, or insert it the first time. (A PostgREST upsert would need SELECT on
+ * every column for ON CONFLICT DO UPDATE, which the private columns deliberately don't grant.)
+ */
 export async function upsertOwnProfile(
   userId: string,
-  fields: Partial<Omit<Profile, 'id' | 'created_at'>> & {
+  fields: Partial<Omit<Profile, 'id' | 'created_at' | 'verified'>> & {
     name?: string;
     birth_date?: string;
   }
 ): Promise<Profile> {
-  const payload = {
-    id: userId,
-    updated_at: new Date().toISOString(),
-    ...fields,
-  };
-  const { data, error } = await supabase
-    .from('profiles')
-    .upsert(payload, { onConflict: 'id' })
-    .select(
-      'id, name, birth_date, gender, city, bio, intention, friday_answer, verified, is_discoverable, onboarding_complete, created_at, updated_at'
-    )
-    .single();
-  if (error) throw error;
-  return data;
+  const payload = { ...fields, updated_at: new Date().toISOString() };
+  delete (payload as { verified?: unknown }).verified;
+  const { data: updated, error: updErr } = await supabase.from('profiles').update(payload).eq('id', userId).select('id');
+  if (updErr) throw updErr;
+  if (!updated?.length) {
+    const { error: insErr } = await supabase.from('profiles').insert({ id: userId, ...payload });
+    if (insErr) throw insErr;
+  }
+  const row = await fetchOwnProfile(userId);
+  if (!row) throw new Error('Profile not found after save');
+  return row;
 }
 
 /** Ensure a profiles row exists after first sign-in / sign-up. */
@@ -333,14 +340,8 @@ export type PrivacySettings = {
   who_can_message: 'everyone' | 'matches';
 };
 
-export async function fetchPrivacySettings(userId: string): Promise<PrivacySettings | null> {
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('show_online_status, read_receipts, show_distance, is_discoverable, who_can_message')
-    .eq('id', userId)
-    .maybeSingle();
-  if (error) throw error;
-  return data as PrivacySettings | null;
+export async function fetchPrivacySettings(_userId: string): Promise<PrivacySettings | null> {
+  return fetchOwnRow<PrivacySettings>('show_online_status, read_receipts, show_distance, is_discoverable, who_can_message');
 }
 
 export async function updatePrivacySettings(

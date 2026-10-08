@@ -18,6 +18,7 @@ import { addComment, createTextPost, fetchComments, fetchFeed, togglePostLike, t
 import { POSTS, PROFILES, SHOW_DEMO_CONTENT, STORY_USERS, type StoryUser } from '@/lib/mock';
 import { createStory, fetchStoryUsers, type NewStory } from '@/lib/stories';
 import { reportUser } from '@/lib/safety';
+import { friendlyError } from '@/lib/errors';
 
 type UiPost = {
   id: string;
@@ -98,7 +99,7 @@ export default function SocialTab() {
     try {
       setRealPosts(await fetchFeed(user.id));
     } catch (err) {
-      toast(err instanceof Error ? err.message : 'Failed to load feed');
+      toast(friendlyError(err, 'Failed to load feed'));
     } finally {
       setLoading(false);
     }
@@ -157,7 +158,7 @@ export default function SocialTab() {
       toast('Posted ✨');
       await load();
     } catch (err) {
-      toast(err instanceof Error ? err.message : 'Could not post');
+      toast(friendlyError(err, 'Could not post'));
     } finally {
       setPosting(false);
     }
@@ -172,7 +173,7 @@ export default function SocialTab() {
       if (!p.liked) void pushLatestNotification(p.authorId);
     } catch (err) {
       setRealPosts((prev) => prev.map((x) => (x.id === p.id ? { ...x, likedByMe: p.liked, likeCount: p.likes } : x)));
-      toast(err instanceof Error ? err.message : 'Like failed');
+      toast(friendlyError(err, 'Like failed'));
     }
   }
 
@@ -269,7 +270,7 @@ export default function SocialTab() {
                               await reportUser({ reporterId: user.id, reportedId: p.authorId, category: 'inappropriate', details: `Post ${p.id}: ${p.content.slice(0, 200)}` });
                               toast('Report submitted');
                             } catch (err) {
-                              toast(err instanceof Error ? err.message : 'Report failed');
+                              toast(friendlyError(err, 'Report failed'));
                             }
                           } else toast('Report submitted');
                         },
@@ -369,7 +370,7 @@ export default function SocialTab() {
             toast('Your story is live for 24h ✨');
             await loadStories();
           } catch (err) {
-            toast(err instanceof Error ? err.message : 'Could not share story');
+            toast(friendlyError(err, 'Could not share story'));
           }
         }}
       />
@@ -430,7 +431,7 @@ function CommentsSheet({ post, onClose, onAdded }: { post: UiPost | null; onClos
       onAdded(post.id);
       await loadComments();
     } catch (err) {
-      toast(err instanceof Error ? err.message : 'Comment failed');
+      toast(friendlyError(err, 'Comment failed'));
     }
   };
 

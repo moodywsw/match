@@ -76,8 +76,9 @@ export async function fetchProfileViewers(): Promise<ProfileViewer[]> {
 }
 
 /* ---------- incognito (SUPER MATCH; enforced by trigger + RLS) ---------- */
-export async function fetchIncognito(userId: string): Promise<boolean> {
-  const { data, error } = await supabase.from('profiles').select('incognito').eq('id', userId).maybeSingle();
+export async function fetchIncognito(_userId: string): Promise<boolean> {
+  // Own private column: read through get_my_profile (profiles.incognito isn't selectable on the table).
+  const { data, error } = await supabase.rpc('get_my_profile').select('incognito').maybeSingle();
   if (error) throw error;
   return !!(data as { incognito?: boolean } | null)?.incognito;
 }

@@ -984,7 +984,7 @@ function MainApp({ onboard, profile, session, discovery, onSignOut, onRefreshDis
           setMatchedProfiles(fromDiscovery);
         } else if (otherIds.length) {
           const photos = await fetchPrimaryPhotos(otherIds);
-          const { data } = await supabase.from("profiles").select("id, name, birth_date, city, bio, intention, verified").in("id", otherIds);
+          const { data } = await supabase.from("profiles").select("id, name, city, bio, intention, verified").in("id", otherIds);
           setMatchedProfiles((data || []).map((r, i) => mapDbProfileToCard(r, photos[r.id], i)));
         } else {
           setMatchedProfiles([]);

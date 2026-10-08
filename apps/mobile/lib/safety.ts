@@ -41,6 +41,18 @@ export async function reportUser(params: {
   if (error) throw error;
 }
 
+/** General "Report a problem" (no specific person) → report queue as category app_problem. */
+export async function reportProblem(reporterId: string, topic: string, details: string): Promise<void> {
+  const text = [topic, details.trim()].filter(Boolean).join(' — ').slice(0, 1000);
+  const { error } = await supabase.from('reports').insert({
+    reporter_id: reporterId,
+    reported_id: null,
+    category: 'app_problem',
+    details: text || null,
+  });
+  if (error) throw error;
+}
+
 export type BlockedRow = { blocked_id: string; name: string; created_at: string };
 
 export async function fetchMyBlocks(blockerId: string): Promise<BlockedRow[]> {

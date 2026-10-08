@@ -216,6 +216,7 @@ export async function notifyEventAttendees(eventId: string): Promise<void> {
 
 export function eventErrorMessage(err: unknown): string {
   const msg = (err as { message?: string })?.message || String(err);
+  if (msg.includes('rate_limited')) return "You've created a lot of events today — try again tomorrow";
   if (msg.includes('event_full')) return 'This event is full';
   if (msg.includes('event_cancelled')) return 'This event was cancelled';
   if (msg.includes('event_past')) return 'This event has already happened';

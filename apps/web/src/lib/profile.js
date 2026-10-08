@@ -28,12 +28,10 @@ export function birthDateFromAge(age = 25) {
   return `${year}-06-15`;
 }
 
-export async function fetchOwnProfile(userId) {
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("*")
-    .eq("id", userId)
-    .maybeSingle();
+// Own private columns (birth_date, gender, settings) are not selectable on the table for
+// anyone; the get_my_profile RPC returns only the caller's full row.
+export async function fetchOwnProfile(_userId) {
+  const { data, error } = await supabase.rpc("get_my_profile").maybeSingle();
   if (error) throw error;
   return data;
 }
@@ -44,28 +42,22 @@ export async function upsertOwnProfile(userId, fields) {
     updated_at: new Date().toISOString(),
     ...fields,
   };
-  const { data, error } = await supabase
-    .from("profiles")
-    .upsert(payload, { onConflict: "id" })
-    .select("*")
-    .single();
-  if (error) throw error;
-  return data;
+  delete payload.verified;
+  // Update first, insert when missing (an ON CONFLICT upsert needs SELECT on private columns).
+  const { id, ...fieldsOnly } = payload;
+  const { data: updated, error: updErr } = await supabase.from("profiles").update(fieldsOnly).eq("id", id).select("id");
+  if (updErr) throw updErr;
+  if (!updated?.length) {
+    const { error: insErr } = await supabase.from("profiles").insert(payload);
+    if (insErr) throw insErr;
+  }
+  return fetchOwnProfile(userId);
 }
 
-export async function fetchDiscoverableProfiles(excludeUserId, limit = 40) {
-  let query = supabase
-    .from("profiles")
-    .select("id, name, birth_date, city, bio, intention, verified, is_discoverable")
-    .eq("is_discoverable", true)
-    .eq("onboarding_complete", true)
-    .limit(limit);
-
-  if (excludeUserId) {
-    query = query.neq("id", excludeUserId);
-  }
-
-  const { data, error } = await query;
+// Server-side deck (excludes self, liked, blocked, hidden). birth_date in the result is an
+// age anchor (same age, not the real date of birth).
+export async function fetchDiscoverableProfiles(_excludeUserId, limit = 40) {
+  const { data, error } = await supabase.rpc("get_discover_deck", { p_limit: limit });
   if (error) throw error;
   return data || [];
 }

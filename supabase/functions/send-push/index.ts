@@ -5,9 +5,12 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
  * send-push — look up public.push_tokens for a user and call Expo Push API.
  *
  * Auth (verify_jwt = true at the gateway):
- *  - Authorization: Bearer <service_role JWT>  → may notify any user_id
- *  - Authorization: Bearer <user access token> → may notify user_id only if
- *    a match exists between the caller and that user (e.g. after a chat message)
+ *  - Authorization: Bearer <service_role JWT>  → free-form mode `{ user_id, title, body }`
+ *    may notify any user (trusted server paths only)
+ *  - Authorization: Bearer <user access token> → only the notification / event modes below,
+ *    where the text is built here from DB rows the caller can't forge (no free-form
+ *    title/body from clients — that would let a match send arbitrary push content).
+ * All ids are validated as UUIDs before they reach a query filter.
  *
  * Notification mode — body `{ "notification_for": "<user_id>" }`:
  *    pushes the newest un-pushed public.notifications row (≤ 2 min old) whose
@@ -50,6 +53,9 @@ function json(data: unknown, status = 200) {
     },
   });
 }
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const isUuid = (v: unknown): v is string => typeof v === "string" && UUID_RE.test(v.trim());
 
 function decodeJwtRole(authHeader: string | null): string | null {
   if (!authHeader?.startsWith("Bearer ")) return null;
@@ -102,6 +108,13 @@ Deno.serve(async (req: Request) => {
     return json({ error: "Invalid JSON body" }, 400);
   }
 
+  if (payload.event_notifications !== undefined && !isUuid(payload.event_notifications)) {
+    return json({ error: "event_notifications must be a uuid" }, 400);
+  }
+  if (payload.notification_for !== undefined && !isUuid(payload.notification_for)) {
+    return json({ error: "notification_for must be a uuid" }, 400);
+  }
+
   if (payload.event_notifications) {
     return await pushEventNotifications(
       supabaseUrl,
@@ -124,50 +137,20 @@ Deno.serve(async (req: Request) => {
     );
   }
 
+  // Free-form mode: trusted server callers only.
+  if (role !== "service_role") {
+    return json({ error: "free-form pushes require the service role; use notification_for" }, 403);
+  }
   const targetUserId = payload.user_id?.trim();
-  if (!targetUserId) {
-    return json({ error: "user_id is required" }, 400);
+  if (!isUuid(targetUserId)) {
+    return json({ error: "user_id (uuid) is required" }, 400);
   }
 
-  const title = payload.title?.trim() || "Match";
-  const bodyText = payload.body?.trim() || "You have a new notification";
-  const data = payload.data ?? {};
+  const title = (payload.title?.trim() || "Match").slice(0, 80);
+  const bodyText = (payload.body?.trim() || "You have a new notification").slice(0, 200);
+  const data = payload.data && typeof payload.data === "object" ? payload.data : {};
 
   const admin = createClient(supabaseUrl, serviceKey);
-
-  if (role === "service_role") {
-    // Trusted server / webhook path — any user_id allowed.
-  } else if (role === "authenticated") {
-    const userClient = createClient(supabaseUrl, anonKey, {
-      global: { headers: { Authorization: authHeader } },
-    });
-    const { data: userData, error: userError } = await userClient.auth.getUser();
-    if (userError || !userData.user) {
-      return json({ error: "Invalid user JWT" }, 401);
-    }
-    const callerId = userData.user.id;
-    if (callerId === targetUserId) {
-      return json({ error: "Cannot push to yourself via user JWT" }, 400);
-    }
-    const { data: matchRow, error: matchError } = await admin
-      .from("matches")
-      .select("id")
-      .or(
-        `and(user_a.eq.${callerId},user_b.eq.${targetUserId}),and(user_a.eq.${targetUserId},user_b.eq.${callerId})`,
-      )
-      .maybeSingle();
-    if (matchError) {
-      return json({ error: matchError.message }, 500);
-    }
-    if (!matchRow) {
-      return json(
-        { error: "Caller is not matched with target user_id" },
-        403,
-      );
-    }
-  } else {
-    return json({ error: `Unsupported JWT role: ${role}` }, 403);
-  }
 
   const { data: tokens, error: tokenError } = await admin
     .from("push_tokens")

@@ -19,6 +19,7 @@ import { fetchInbox, inboxIcon, inboxText, markAllRead, markRead, subscribeInbox
 import { configureIap, fetchServerTier, type EntitlementId, type Tier } from '@/lib/iap';
 import { pushLatestNotification } from '@/lib/push';
 import { supabase } from '@/lib/supabase';
+import { friendlyError } from '@/lib/errors';
 
 type MatchState = { data: MatchOverlayData; person: Person; matchId: string | null };
 
@@ -174,7 +175,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const rows = await fetchDiscoverDeck(user.id, { ...deckFilters, includePassed: !!opts?.includePassed });
       setRealPeople(rows.map((r) => personFromDiscover(meForCompat, r)));
     } catch (err) {
-      setPeopleError(err instanceof Error ? err.message : 'Failed to load people');
+      setPeopleError(friendlyError(err, 'Failed to load people'));
     } finally {
       setPeopleLoading(false);
     }
@@ -337,7 +338,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const convId = await ensureConversation(m.matchId);
       router.push({ pathname: '/chat/[conversationId]', params: { conversationId: convId } });
     } catch (err) {
-      toast(err instanceof Error ? err.message : 'Could not open chat');
+      toast(friendlyError(err, 'Could not open chat'));
     }
   }, [match, router, toast]);
 
@@ -387,7 +388,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       try {
         await openNotificationTarget(router, n.type, n.payload);
       } catch (err) {
-        toast(err instanceof Error ? err.message : 'Could not open');
+        toast(friendlyError(err, 'Could not open'));
       }
     },
     [closeNotifications, router, toast]
@@ -405,7 +406,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setInbox((prev) => prev.map((x) => (x.id === nid && !x.readAt ? { ...x, readAt: new Date().toISOString() } : x)));
       markRead(nid).catch(() => {});
     }
-    openNotificationTarget(router, tap.type, tap.data).catch((err) => toast(err instanceof Error ? err.message : 'Could not open'));
+    openNotificationTarget(router, tap.type, tap.data).catch((err) => toast(friendlyError(err, 'Could not open')));
   };
   useEffect(
     () =>

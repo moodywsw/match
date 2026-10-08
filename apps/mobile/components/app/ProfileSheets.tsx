@@ -17,7 +17,8 @@ import { fetchIncognito, perkErrorCode, setIncognito } from '@/lib/perks';
 import { fetchAllInterests, fetchUserInterestIds, setUserInterests, type Interest } from '@/lib/interests';
 import { FRIDAY_OPTIONS, INTENTIONS } from '@/lib/mock';
 import { fetchPrivacySettings, updatePrivacySettings, upsertOwnProfile, type PrivacySettings } from '@/lib/profile';
-import { fetchMyBlocks, unblockUser, type BlockedRow } from '@/lib/safety';
+import { friendlyError } from '@/lib/errors';
+import { fetchMyBlocks, reportProblem, unblockUser, type BlockedRow } from '@/lib/safety';
 
 import { inputStyle } from './AuthForm';
 
@@ -65,7 +66,7 @@ export function SettingsSheet({ visible, onClose, verified, onVerified }: { visi
         } else toast(res === 'denied' ? 'Location permission is off — enable it in Settings' : 'Could not get your location');
       }
     } catch (err) {
-      toast(err instanceof Error ? err.message : 'Could not update location');
+      toast(friendlyError(err, 'Could not update location'));
     } finally {
       setLocBusy(false);
     }
@@ -82,7 +83,7 @@ export function SettingsSheet({ visible, onClose, verified, onVerified }: { visi
       toast(next ? 'Incognito on — only people you like can see you' : 'Incognito off');
     } catch (err) {
       setIncognitoState(!next);
-      toast(perkErrorCode(err) === 'premium_required' ? 'Incognito is part of SUPER MATCH' : err instanceof Error ? err.message : 'Could not save setting');
+      toast(perkErrorCode(err) === 'premium_required' ? 'Incognito is part of SUPER MATCH' : friendlyError(err, 'Could not save setting'));
     }
   };
 
@@ -94,7 +95,7 @@ export function SettingsSheet({ visible, onClose, verified, onVerified }: { visi
       await updatePrivacySettings(user.id, fields);
     } catch (err) {
       setPrivacy(prev);
-      toast(err instanceof Error ? err.message : 'Could not save setting');
+      toast(friendlyError(err, 'Could not save setting'));
     }
   };
 
@@ -127,7 +128,7 @@ export function SettingsSheet({ visible, onClose, verified, onVerified }: { visi
               toast('Your account was deleted');
               await signOut();
             } catch (err) {
-              toast(err instanceof Error ? err.message : 'Could not delete account');
+              toast(friendlyError(err, 'Could not delete account'));
             } finally {
               setDeleting(false);
             }
@@ -230,7 +231,7 @@ function BlockedAccountsSheet({ visible, onClose }: { visible: boolean; onClose:
                   toast(`${r.name} unblocked`);
                   void reloadPeople();
                 } catch (err) {
-                  toast(err instanceof Error ? err.message : 'Unblock failed');
+                  toast(friendlyError(err, 'Unblock failed'));
                 }
               }}
               style={{ paddingVertical: 6, paddingHorizontal: 12, borderRadius: 999, borderWidth: 1, borderColor: T.border }}>
@@ -247,9 +248,24 @@ function BlockedAccountsSheet({ visible, onClose }: { visible: boolean; onClose:
 }
 
 function ReportProblemSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+  const { user } = useAuth();
+  const { toast } = useApp();
   const [category, setCategory] = useState<string | null>(null);
   const [details, setDetails] = useState('');
   const [sent, setSent] = useState(false);
+  const [sending, setSending] = useState(false);
+  const submit = async () => {
+    if (!category || !user?.id || sending) return;
+    setSending(true);
+    try {
+      await reportProblem(user.id, category, details);
+      setSent(true);
+    } catch (e) {
+      toast(friendlyError(e));
+    } finally {
+      setSending(false);
+    }
+  };
   useEffect(() => {
     if (!visible) {
       setSent(false);
@@ -273,8 +289,8 @@ function ReportProblemSheet({ visible, onClose }: { visible: boolean; onClose: (
               <Chip key={c} label={c} active={category === c} onPress={() => setCategory(c)} />
             ))}
           </View>
-          <TextInput value={details} onChangeText={setDetails} placeholder="Tell us what happened…" placeholderTextColor={T.mutedDim} multiline style={[inputStyle, { fontSize: 13.5, minHeight: 100, textAlignVertical: 'top', borderRadius: 14, marginBottom: 16 }]} />
-          <PrimaryButton label="Submit report" disabled={!category} onPress={() => setSent(true)} />
+          <TextInput value={details} onChangeText={setDetails} maxLength={900} placeholder="Tell us what happened…" placeholderTextColor={T.mutedDim} multiline style={[inputStyle, { fontSize: 13.5, minHeight: 100, textAlignVertical: 'top', borderRadius: 14, marginBottom: 16 }]} />
+          <PrimaryButton label={sending ? 'Sending…' : 'Submit report'} disabled={!category || sending} onPress={submit} />
           <Txt size={11} color={T.mutedDim} center style={{ marginTop: 10 }}>
             To report a specific person, use ⋯ on their card or in your chat.
           </Txt>
@@ -409,7 +425,7 @@ export function EditProfileSheet({ visible, onClose }: { visible: boolean; onClo
       toast('Profile saved ✨');
       onClose();
     } catch (err) {
-      toast(err instanceof Error ? err.message : 'Save failed');
+      toast(friendlyError(err, 'Save failed'));
     } finally {
       setSaving(false);
     }

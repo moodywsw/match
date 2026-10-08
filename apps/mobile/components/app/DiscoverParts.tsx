@@ -14,6 +14,7 @@ import { fetchMapPeople, getLocationStatus, refreshLocationIfOptedIn, shareAppro
 import { INTENTIONS, type Person } from '@/lib/mock';
 import { ageFromBirthDate, fetchPrimaryPhotos } from '@/lib/profile';
 import { REPORT_CATEGORIES, type ReportCategory } from '@/lib/safety';
+import { friendlyError } from '@/lib/errors';
 
 import { inputStyle } from './AuthForm';
 import { FridayCard } from './FridayCard';
@@ -363,7 +364,7 @@ export function MapView({ profiles, onLike, height }: { profiles: Person[]; onLi
         await load();
       } else toast(res === 'denied' ? 'Location permission is off — enable it in Settings' : 'Could not get your location');
     } catch (err) {
-      toast(err instanceof Error ? err.message : 'Could not share location');
+      toast(friendlyError(err, 'Could not share location'));
     } finally {
       setSharing(false);
     }

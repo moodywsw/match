@@ -137,13 +137,16 @@ except the "why you match" teaser, which is computed on the device.
 
 ## 4. Supabase (before launch)
 
-- [ ] Auth → enable **leaked password protection**, which currently shows as an advisor
-      warning. The owner said this will be handled with the final security pass.
+- [ ] Auth → Password security → enable **leaked password protection** (HaveIBeenPwned).
+      It's a dashboard-only toggle and the only remaining Security Advisor warning. See
+      `docs/SECURITY.md`.
+- [ ] Make your account an admin so you can work the report queue:
+      `update public.profiles set is_admin = true where id = '<your user id>';`
 - [ ] Auth → set the email templates and the redirect URLs (`match://`).
 - [ ] Check the project region (EU recommended for GDPR) and update the privacy policy to
       match.
-- [ ] Re-run Security Advisors. The remaining warnings, `ensure_conversation` and
-      `get_blocked_peer_ids`, are intentional SECURITY DEFINER RPCs.
+- [ ] Re-run Security Advisors. Once leaked password protection is on, there should be zero
+      findings.
 - [ ] Optional: upgrade the plan for daily backups or PITR. The privacy policy promises a
       backup retention window.
 

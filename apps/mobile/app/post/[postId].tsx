@@ -14,6 +14,7 @@ import { addComment, fetchComments, fetchPost, togglePostLike, type FeedComment,
 import { timeAgo } from '@/lib/inbox';
 import { fetchPrimaryPhotos } from '@/lib/profile';
 import { pushLatestNotification } from '@/lib/push';
+import { friendlyError } from '@/lib/errors';
 
 /** Single post + comments (opened from like / comment notifications). */
 export default function PostScreen() {
@@ -37,7 +38,7 @@ export default function PostScreen() {
       const ids = [...new Set(c.map((x) => x.user_id))];
       if (ids.length) setPhotos(await fetchPrimaryPhotos(ids).catch(() => ({})));
     } catch (err) {
-      toast(err instanceof Error ? err.message : 'Could not load post');
+      toast(friendlyError(err, 'Could not load post'));
     } finally {
       setLoading(false);
     }
@@ -58,7 +59,7 @@ export default function PostScreen() {
       if (!was && post.user_id !== user.id) void pushLatestNotification(post.user_id);
     } catch (err) {
       setPost((p) => (p ? { ...p, likedByMe: was, likeCount: p.likeCount + (was ? 1 : -1) } : p));
-      toast(err instanceof Error ? err.message : 'Like failed');
+      toast(friendlyError(err, 'Like failed'));
     }
   };
 
@@ -71,7 +72,7 @@ export default function PostScreen() {
       if (post.user_id !== user.id) void pushLatestNotification(post.user_id);
       await load();
     } catch (err) {
-      toast(err instanceof Error ? err.message : 'Comment failed');
+      toast(friendlyError(err, 'Comment failed'));
     }
   };
 
