@@ -40,3 +40,32 @@ export async function reportUser(params: {
   });
   if (error) throw error;
 }
+
+export type BlockedRow = { blocked_id: string; name: string; created_at: string };
+
+export async function fetchMyBlocks(blockerId: string): Promise<BlockedRow[]> {
+  const { data, error } = await supabase
+    .from('blocks')
+    .select('blocked_id, created_at')
+    .eq('blocker_id', blockerId)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  const ids = (data || []).map((r) => r.blocked_id as string);
+  if (!ids.length) return [];
+  const { data: profiles } = await supabase.from('profiles').select('id, name').in('id', ids);
+  const names = Object.fromEntries((profiles || []).map((p) => [p.id, p.name]));
+  return (data || []).map((r) => ({
+    blocked_id: r.blocked_id as string,
+    created_at: r.created_at as string,
+    name: names[r.blocked_id as string] || 'Member',
+  }));
+}
+
+export async function unblockUser(blockerId: string, blockedId: string): Promise<void> {
+  const { error } = await supabase
+    .from('blocks')
+    .delete()
+    .eq('blocker_id', blockerId)
+    .eq('blocked_id', blockedId);
+  if (error) throw error;
+}

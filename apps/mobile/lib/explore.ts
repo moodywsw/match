@@ -77,3 +77,21 @@ export async function fetchLiveStreams(limit = 20): Promise<LiveRow[]> {
   const names = Object.fromEntries((profiles || []).map((p) => [p.id, p.name]));
   return data.map((s) => ({ ...s, hostName: names[s.host_id] || 'Host' }));
 }
+
+export async function unrsvpEvent(eventId: string, userId: string): Promise<void> {
+  const { error } = await supabase
+    .from('event_participants')
+    .delete()
+    .eq('event_id', eventId)
+    .eq('user_id', userId);
+  if (error) throw error;
+}
+
+export async function fetchMyRsvps(userId: string): Promise<string[]> {
+  const { data, error } = await supabase
+    .from('event_participants')
+    .select('event_id')
+    .eq('user_id', userId);
+  if (error) throw error;
+  return (data || []).map((r) => r.event_id as string);
+}

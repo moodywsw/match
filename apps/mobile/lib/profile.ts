@@ -322,3 +322,31 @@ export function demoDiscoverProfiles(): DiscoverProfile[] {
     },
   ];
 }
+
+export type PrivacySettings = {
+  show_online_status: boolean;
+  show_distance: boolean;
+  is_discoverable: boolean;
+  who_can_message: 'everyone' | 'matches';
+};
+
+export async function fetchPrivacySettings(userId: string): Promise<PrivacySettings | null> {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('show_online_status, show_distance, is_discoverable, who_can_message')
+    .eq('id', userId)
+    .maybeSingle();
+  if (error) throw error;
+  return data as PrivacySettings | null;
+}
+
+export async function updatePrivacySettings(
+  userId: string,
+  fields: Partial<PrivacySettings>
+): Promise<void> {
+  const { error } = await supabase
+    .from('profiles')
+    .update({ ...fields, updated_at: new Date().toISOString() })
+    .eq('id', userId);
+  if (error) throw error;
+}

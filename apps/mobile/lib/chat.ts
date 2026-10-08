@@ -171,7 +171,7 @@ export function subscribeToMessages(
 export async function fetchConversationMeta(
   conversationId: string,
   userId: string
-): Promise<{ otherName: string; otherPhoto: string | null; otherUserId: string } | null> {
+): Promise<{ otherName: string; otherPhoto: string | null; otherUserId: string; otherIntention: string | null } | null> {
   const { data: conv, error } = await supabase
     .from('conversations')
     .select('id, match_id')
@@ -190,12 +190,44 @@ export async function fetchConversationMeta(
 
   const otherUserId = match.user_a === userId ? match.user_b : match.user_a;
   const [{ data: profile }, photos] = await Promise.all([
-    supabase.from('profiles').select('id, name').eq('id', otherUserId).maybeSingle(),
+    supabase.from('profiles').select('id, name, intention').eq('id', otherUserId).maybeSingle(),
     fetchPrimaryPhotos([otherUserId]),
   ]);
   return {
     otherUserId,
     otherName: profile?.name || 'Match',
     otherPhoto: photos[otherUserId] ?? null,
+    otherIntention: (profile?.intention as string | null) ?? null,
+  };
+}
+
+/**
+ * Ephemeral "typing…" signal over Realtime broadcast (nothing is stored).
+ * Fails soft if Realtime is unavailable.
+ */
+export function joinTypingChannel(
+  conversationId: string,
+  userId: string,
+  onTyping: () => void
+): { ping: () => void; leave: () => void } {
+  const channel = supabase.channel(`typing:${conversationId}`, {
+    config: { broadcast: { self: false } },
+  });
+  channel
+    .on('broadcast', { event: 'typing' }, ({ payload }) => {
+      if (payload?.userId && payload.userId !== userId) onTyping();
+    })
+    .subscribe();
+  let last = 0;
+  return {
+    ping: () => {
+      const now = Date.now();
+      if (now - last < 1500) return;
+      last = now;
+      void channel.send({ type: 'broadcast', event: 'typing', payload: { userId } });
+    },
+    leave: () => {
+      supabase.removeChannel(channel);
+    },
   };
 }

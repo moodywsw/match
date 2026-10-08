@@ -20,7 +20,7 @@ type AuthContextValue = {
   loading: boolean;
   refreshProfile: () => Promise<void>;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
-  signUp: (email: string, password: string) => Promise<{ error: string | null }>;
+  signUp: (email: string, password: string) => Promise<{ error: string | null; needsConfirmation?: boolean }>;
   signOut: () => Promise<void>;
 };
 
@@ -98,14 +98,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signUp = useCallback(async (email: string, password: string) => {
     const { data, error } = await supabase.auth.signUp({ email, password });
     if (error) return { error: error.message };
-    if (data.user) {
+    // Without a session (email confirmation on) RLS would reject the stub;
+    // AuthProvider creates it on first sign-in instead.
+    if (data.user && data.session) {
       try {
         await ensureProfileStub(data.user.id, data.user.email ?? email);
       } catch (err) {
         console.warn('[match] profile stub after sign-up failed', err);
       }
     }
-    return { error: null };
+    return { error: null, needsConfirmation: !data.session };
   }, []);
 
   const signOut = useCallback(async () => {
