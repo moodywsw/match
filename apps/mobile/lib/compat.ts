@@ -19,19 +19,7 @@ export type Me = {
   id: string;
   interests: string[];
   intention: string | null;
-  lat?: number | null;
-  lng?: number | null;
 };
-
-function km(aLat: number, aLng: number, bLat: number, bLng: number) {
-  const R = 6371;
-  const dLat = ((bLat - aLat) * Math.PI) / 180;
-  const dLng = ((bLng - aLng) * Math.PI) / 180;
-  const s =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos((aLat * Math.PI) / 180) * Math.cos((bLat * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
-  return 2 * R * Math.asin(Math.sqrt(s));
-}
 
 export function computeCompat(me: Me, other: { id: string; interests: string[]; intention: string | null }) {
   const mine = new Set(me.interests.map((s) => s.toLowerCase()));
@@ -74,10 +62,8 @@ export function computeCompat(me: Me, other: { id: string; interests: string[]; 
 
 export function personFromDiscover(me: Me, p: DiscoverProfile): Person {
   const c = computeCompat(me, { id: p.id, interests: p.interests, intention: p.intention });
-  const distance =
-    me.lat != null && me.lng != null && p.approx_lat != null && p.approx_lng != null
-      ? Math.max(1, Math.round(km(me.lat, me.lng, p.approx_lat, p.approx_lng)))
-      : null;
+  // Server-computed from coarse cells; null when they hide distance or either side has no location.
+  const distance = p.distanceKm == null ? null : Math.max(1, Math.round(p.distanceKm));
   const b1 = Math.floor(hash01(p.id, 11) * BADGES.length);
   return {
     id: p.id,
@@ -101,5 +87,6 @@ export function personFromDiscover(me: Me, p: DiscoverProfile): Person {
     real: true,
     boosted: !!p.boosted,
     superLikedMe: !!p.superLikedMe,
+    fridayAnswer: p.fridayAnswer ?? null,
   };
 }

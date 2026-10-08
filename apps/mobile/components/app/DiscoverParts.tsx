@@ -1,6 +1,7 @@
 import Slider from '@react-native-community/slider';
-import { BadgeCheck, Calendar, Check, Heart, Lock, Shield, SlidersHorizontal, X } from 'lucide-react-native';
-import { useEffect, useState } from 'react';
+import { BadgeCheck, Calendar, Check, Heart, Lock, MapPin, Shield, SlidersHorizontal, X } from 'lucide-react-native';
+import { useRouter } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
 import { Pressable, TextInput, View } from 'react-native';
 
 import { Sheet } from '@/components/ui/Sheet';
@@ -8,10 +9,14 @@ import { Avatar, Chip, MatchRing, Photo, PrimaryButton, SettingRow } from '@/com
 import { Txt } from '@/components/ui/Txt';
 import { T } from '@/constants/theme';
 import { useApp } from '@/contexts/AppContext';
-import { INTENTIONS, pseudoPos, type EventItem, type Person } from '@/lib/mock';
+import { fetchEvents, fmtEventDate, type EventDetail } from '@/lib/events';
+import { fetchMapPeople, getLocationStatus, refreshLocationIfOptedIn, shareApproximateLocation, type MapPerson } from '@/lib/location';
+import { INTENTIONS, type Person } from '@/lib/mock';
+import { ageFromBirthDate, fetchPrimaryPhotos } from '@/lib/profile';
 import { REPORT_CATEGORIES, type ReportCategory } from '@/lib/safety';
 
 import { inputStyle } from './AuthForm';
+import { FridayCard } from './FridayCard';
 import { LinearGradient } from 'expo-linear-gradient';
 
 /* ------------------------------ compatibility ------------------------------ */
@@ -38,6 +43,7 @@ export function CompatibilitySheet({ profile, onClose }: { profile: Person | nul
               </Txt>
             </View>
           </View>
+          <FridayCard answer={profile.fridayAnswer} name={profile.name} style={{ marginBottom: 16 }} />
           {shown.map(([k, v]) => (
             <View key={k} style={{ marginBottom: 10 }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
@@ -307,11 +313,73 @@ export function SafetySheet({
 }
 
 /* ------------------------------ map ------------------------------ */
-export function MapView({ profiles, events, onLike, height }: { profiles: Person[]; events: EventItem[]; onLike: (p: Person) => void; height: number }) {
+const NICE_RADII = [2, 3, 5, 8, 10, 15, 25, 40, 50];
+const MAP_SPAN = 44; // % of the half-width used for the radius
+
+/**
+ * Approximate map. Positions come only from server RPCs (get_map_people /
+ * get_events) as jittered km offsets from MY ~1.5 km cell — never coordinates.
+ * People are drawn as fuzzy rings, events as pins.
+ */
+export function MapView({ profiles, onLike, height }: { profiles: Person[]; onLike: (p: Person) => void; height: number }) {
+  const router = useRouter();
+  const { toast } = useApp();
   const [layer, setLayer] = useState<'people' | 'events'>('people');
-  const [selPerson, setSelPerson] = useState<Person | null>(null);
-  const [selEvent, setSelEvent] = useState<EventItem | null>(null);
-  const people = profiles.slice(0, 12);
+  const [status, setStatus] = useState<'loading' | 'off' | 'on'>('loading');
+  const [people, setPeople] = useState<MapPerson[]>([]);
+  const [photos, setPhotos] = useState<Record<string, string>>({});
+  const [events, setEvents] = useState<EventDetail[]>([]);
+  const [selPerson, setSelPerson] = useState<MapPerson | null>(null);
+  const [selEvent, setSelEvent] = useState<EventDetail | null>(null);
+  const [sharing, setSharing] = useState(false);
+  const [w, setW] = useState(340);
+
+  const load = useCallback(async () => {
+    const st = await getLocationStatus().catch(() => ({ hasLocation: false, updatedAt: null }));
+    if (!st.hasLocation) {
+      setStatus('off');
+      return;
+    }
+    setStatus('on');
+    const [ppl, evs] = await Promise.all([
+      fetchMapPeople(25, 40).catch(() => [] as MapPerson[]),
+      fetchEvents({ scope: 'upcoming', limit: 60 }).catch(() => [] as EventDetail[]),
+    ]);
+    setPeople(ppl);
+    setEvents(evs.filter((e) => e.status === 'scheduled' && e.dx_km != null && e.dy_km != null && (e.distance_km ?? 0) <= 50));
+    if (ppl.length) setPhotos(await fetchPrimaryPhotos(ppl.map((p) => p.id)).catch(() => ({})));
+  }, []);
+
+  useEffect(() => {
+    void refreshLocationIfOptedIn().finally(() => void load());
+  }, [load]);
+
+  const share = async () => {
+    setSharing(true);
+    try {
+      const res = await shareApproximateLocation();
+      if (res === 'shared') {
+        toast('Approximate location on (≈1.5 km) 📍');
+        await load();
+      } else toast(res === 'denied' ? 'Location permission is off — enable it in Settings' : 'Could not get your location');
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Could not share location');
+    } finally {
+      setSharing(false);
+    }
+  };
+
+  const items = layer === 'people' ? people.map((p) => [p.dx_km, p.dy_km]) : events.map((e) => [e.dx_km ?? 0, e.dy_km ?? 0]);
+  const far = items.reduce((m, [dx, dy]) => Math.max(m, Math.abs(dx), Math.abs(dy)), 0) * 1.15;
+  const radius = NICE_RADII.find((r) => r >= far) ?? 50;
+  const pos = (dx: number, dy: number) => ({
+    left: `${50 + Math.max(-1, Math.min(1, dx / radius)) * MAP_SPAN}%` as const,
+    top: `${50 - Math.max(-1, Math.min(1, dy / radius)) * MAP_SPAN}%` as const,
+  });
+  // ~1.5 km cell + jitter → draw each person as a fuzzy area, never a dot
+  const ringPx = Math.max(46, Math.min(120, ((2 * 1.3) / radius) * ((w / 2) * (MAP_SPAN / 50))));
+  const deckPerson = selPerson ? profiles.find((p) => p.id === selPerson.id) : undefined;
+  const selAge = selPerson ? ageFromBirthDate(selPerson.birth_date) : null;
 
   return (
     <View style={{ marginTop: 4, flex: 1 }}>
@@ -337,7 +405,7 @@ export function MapView({ profiles, events, onLike, height }: { profiles: Person
         ))}
       </View>
 
-      <View style={{ height, borderRadius: 24, overflow: 'hidden', borderWidth: 1, borderColor: T.border }}>
+      <View onLayout={(e) => setW(e.nativeEvent.layout.width)} style={{ height, borderRadius: 24, overflow: 'hidden', borderWidth: 1, borderColor: T.border }}>
         <LinearGradient colors={['#221C2E', '#17131F']} start={{ x: 0.2, y: 0 }} end={{ x: 0.8, y: 1 }} style={{ position: 'absolute', inset: 0 }} />
         <View style={{ position: 'absolute', left: '15%', top: '5%', width: 180, height: 180, borderRadius: 90, backgroundColor: 'rgba(255,85,115,0.07)' }} />
         <View style={{ position: 'absolute', left: '55%', top: '50%', width: 220, height: 220, borderRadius: 110, backgroundColor: 'rgba(139,107,255,0.09)' }} />
@@ -351,8 +419,8 @@ export function MapView({ profiles, events, onLike, height }: { profiles: Person
 
         {/* approximate-location rings around "you" — never an exact pin */}
         <View style={{ position: 'absolute', left: '50%', top: '50%', width: 0, height: 0, alignItems: 'center', justifyContent: 'center' }}>
-          {[110, 75, 40].map((s, i) => (
-            <View key={s} style={{ position: 'absolute', width: s, height: s, borderRadius: s / 2, borderWidth: 1, borderColor: `${T.rose}55`, backgroundColor: i === 2 ? `${T.rose}22` : 'transparent' }} />
+          {[110, 75, 40].map((sz, i) => (
+            <View key={sz} style={{ position: 'absolute', width: sz, height: sz, borderRadius: sz / 2, borderWidth: 1, borderColor: `${T.rose}55`, backgroundColor: i === 2 ? `${T.rose}22` : 'transparent' }} />
           ))}
           <View style={{ position: 'absolute', width: 12, height: 12, borderRadius: 6, backgroundColor: T.rose, borderWidth: 2, borderColor: T.ink }} />
           <View style={{ position: 'absolute', top: 14, width: 140, alignItems: 'center' }}>
@@ -362,68 +430,108 @@ export function MapView({ profiles, events, onLike, height }: { profiles: Person
           </View>
         </View>
 
-        {layer === 'people'
+        {status === 'on' && layer === 'people'
           ? people.map((p) => {
-              const pos = pseudoPos(p.id);
+              const at = pos(p.dx_km, p.dy_km);
+              const sel = selPerson?.id === p.id;
               return (
-                <Pressable key={p.id} onPress={() => setSelPerson(p)} style={{ position: 'absolute', left: `${pos.x}%`, top: `${pos.y}%`, marginLeft: -19, marginTop: -19 }}>
-                  <View style={{ width: 38, height: 38, borderRadius: 19, overflow: 'hidden', borderWidth: 2, borderColor: selPerson?.id === p.id ? T.amber : T.rose, shadowColor: '#000', shadowOpacity: 0.4, shadowRadius: 5 }}>
-                    <Avatar uri={p.photo} name={p.name} size={34} />
+                <Pressable key={p.id} onPress={() => setSelPerson(p)} style={{ position: 'absolute', left: at.left, top: at.top, width: ringPx, height: ringPx, marginLeft: -ringPx / 2, marginTop: -ringPx / 2, alignItems: 'center', justifyContent: 'center' }}>
+                  <View style={{ position: 'absolute', width: ringPx, height: ringPx, borderRadius: ringPx / 2, borderWidth: 1, borderColor: sel ? `${T.amber}AA` : `${T.rose}66`, backgroundColor: sel ? `${T.amber}1F` : `${T.rose}14` }} />
+                  <View style={{ width: 34, height: 34, borderRadius: 17, overflow: 'hidden', borderWidth: 2, borderColor: sel ? T.amber : T.rose, opacity: 0.95 }}>
+                    <Avatar uri={photos[p.id]} name={p.name} size={30} />
                   </View>
                 </Pressable>
               );
             })
-          : events.map((e) => {
-              const pos = pseudoPos(e.id, 40);
+          : null}
+        {status === 'on' && layer === 'events'
+          ? events.map((e) => {
+              const at = pos(e.dx_km ?? 0, e.dy_km ?? 0);
               return (
-                <Pressable key={e.id} onPress={() => setSelEvent(e)} style={{ position: 'absolute', left: `${pos.x}%`, top: `${pos.y}%`, marginLeft: -15, marginTop: -34 }}>
-                  <View style={{ width: 30, height: 30, borderTopLeftRadius: 15, borderTopRightRadius: 15, borderBottomRightRadius: 15, borderBottomLeftRadius: 0, transform: [{ rotate: '-45deg' }], backgroundColor: T.violet, borderWidth: 2, borderColor: T.ink, alignItems: 'center', justifyContent: 'center' }}>
+                <Pressable key={e.id} onPress={() => setSelEvent(e)} style={{ position: 'absolute', left: at.left, top: at.top, marginLeft: -15, marginTop: -34 }}>
+                  <View style={{ width: 30, height: 30, borderTopLeftRadius: 15, borderTopRightRadius: 15, borderBottomRightRadius: 15, borderBottomLeftRadius: 0, transform: [{ rotate: '-45deg' }], backgroundColor: selEvent?.id === e.id ? T.amber : T.violet, borderWidth: 2, borderColor: T.ink, alignItems: 'center', justifyContent: 'center' }}>
                     <View style={{ transform: [{ rotate: '45deg' }] }}>
                       <Calendar size={13} color="#fff" />
                     </View>
                   </View>
                 </Pressable>
               );
-            })}
+            })
+          : null}
+
+        {status === 'on' ? (
+          <View style={{ position: 'absolute', top: 10, left: 10, flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: T.chipDark, borderRadius: 999, paddingVertical: 4, paddingHorizontal: 10 }}>
+            <View style={{ width: 18, height: 1.5, backgroundColor: T.muted }} />
+            <Txt v="mono" size={10} color={T.muted}>
+              {radius} km radius
+            </Txt>
+          </View>
+        ) : null}
+        {status === 'on' && !(layer === 'people' ? people.length : events.length) ? (
+          <View style={{ position: 'absolute', left: 0, right: 0, bottom: 16, alignItems: 'center' }}>
+            <View style={{ backgroundColor: T.chipDark, borderRadius: 999, paddingVertical: 6, paddingHorizontal: 12 }}>
+              <Txt size={11.5} color={T.muted}>
+                {layer === 'people' ? 'No one sharing their area nearby yet' : 'No pinned events nearby yet'}
+              </Txt>
+            </View>
+          </View>
+        ) : null}
+        {status === 'off' ? (
+          <View style={{ position: 'absolute', inset: 0, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: 'rgba(21,18,28,0.55)' }}>
+            <View style={{ backgroundColor: T.surface, borderWidth: 1, borderColor: T.border, borderRadius: 20, padding: 18, alignItems: 'center', gap: 8, maxWidth: 300 }}>
+              <MapPin size={22} color={T.rose} />
+              <Txt w={700} size={15} center>
+                See who's around
+              </Txt>
+              <Txt size={12.5} color={T.muted} center lh={1.4}>
+                Share your approximate location to see people & events near you. Only a ~1.5 km area is stored — never your exact spot.
+              </Txt>
+              <PrimaryButton small label="Share approximate location" onPress={share} loading={sharing} style={{ marginTop: 6 }} />
+            </View>
+          </View>
+        ) : null}
 
         {selPerson || selEvent ? (
           <View style={{ position: 'absolute', left: 12, right: 12, bottom: 12, backgroundColor: T.surface, borderWidth: 1, borderColor: T.border, borderRadius: 18, padding: 14, flexDirection: 'row', gap: 12, alignItems: 'center' }}>
             {selPerson ? (
               <>
-                <Photo uri={selPerson.photo} name={selPerson.name} style={{ width: 52, height: 52, borderRadius: 14 }} />
+                <Photo uri={photos[selPerson.id]} name={selPerson.name} style={{ width: 52, height: 52, borderRadius: 14 }} />
                 <View style={{ flex: 1 }}>
                   <Txt w={700} size={13.5}>
                     {selPerson.name}
-                    {selPerson.age ? `, ${selPerson.age}` : ''}
+                    {selAge ? `, ${selAge}` : ''}
                   </Txt>
                   <Txt size={11.5} color={T.muted} style={{ marginTop: 2 }}>
-                    {selPerson.distance != null ? `~${selPerson.distance} km away · ` : ''}
-                    {selPerson.match}% match
+                    ~{selPerson.distance_km} km away
+                    {deckPerson ? ` · ${deckPerson.match}% match` : ''}
                   </Txt>
                 </View>
-                <Pressable
-                  onPress={() => {
-                    onLike(selPerson);
-                    setSelPerson(null);
-                  }}>
-                  <LinearGradient colors={[T.rose, T.coral]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' }}>
-                    <Heart size={17} color="#fff" />
-                  </LinearGradient>
-                </Pressable>
+                {deckPerson ? (
+                  <Pressable
+                    onPress={() => {
+                      onLike(deckPerson);
+                      setSelPerson(null);
+                    }}>
+                    <LinearGradient colors={[T.rose, T.coral]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' }}>
+                      <Heart size={17} color="#fff" />
+                    </LinearGradient>
+                  </Pressable>
+                ) : null}
               </>
             ) : selEvent ? (
-              <>
-                <Photo uri={selEvent.cover} name={selEvent.title} style={{ width: 52, height: 52, borderRadius: 14 }} />
+              <Pressable style={{ flex: 1, flexDirection: 'row', gap: 12, alignItems: 'center' }} onPress={() => router.push({ pathname: '/event/[eventId]', params: { eventId: selEvent.id } })}>
+                <Photo uri={selEvent.cover_url} name={selEvent.title} style={{ width: 52, height: 52, borderRadius: 14 }} />
                 <View style={{ flex: 1 }}>
-                  <Txt w={700} size={13.5}>
+                  <Txt w={700} size={13.5} numberOfLines={1}>
                     {selEvent.title}
                   </Txt>
-                  <Txt size={11.5} color={T.muted} style={{ marginTop: 2 }}>
-                    {selEvent.date}
-                    {selEvent.going ? ` · ${selEvent.going} going` : ''}
+                  <Txt size={11.5} color={T.muted} style={{ marginTop: 2 }} numberOfLines={1}>
+                    {fmtEventDate(selEvent.starts_at)}
+                    {selEvent.distance_km != null ? ` · ~${selEvent.distance_km} km` : ''}
+                    {selEvent.going_count ? ` · ${selEvent.going_count} going` : ''}
                   </Txt>
                 </View>
-              </>
+              </Pressable>
             ) : null}
             <Pressable
               hitSlop={8}

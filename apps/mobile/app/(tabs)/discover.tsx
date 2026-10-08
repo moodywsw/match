@@ -10,7 +10,6 @@ import { Txt } from '@/components/ui/Txt';
 import { T } from '@/constants/theme';
 import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { useEvents } from '@/hooks/useEvents';
 import { DISCOVERY_MODES, hash01, type Person } from '@/lib/mock';
 import { activateBoost, fetchBoostStatus, perkErrorCode, recordProfileView } from '@/lib/perks';
 import { blockUser, reportUser } from '@/lib/safety';
@@ -102,7 +101,6 @@ export default function DiscoverTab() {
   const { people, likedIds, passedIds, like, pass, me, resetDeck, removePerson, toast, tier, setDeckFilters, rewind, rewoundId } = useApp();
   const plus = tier !== 'free';
   const boost = useBoost();
-  const { events } = useEvents();
   const [mode, setMode] = useState('Recommended');
   const [view, setView] = useState<'cards' | 'map'>('cards');
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
@@ -226,7 +224,7 @@ export default function DiscoverTab() {
 
         {view === 'map' ? (
           <View style={{ flex: 1, paddingHorizontal: 18 }} onLayout={(e) => setAreaH(e.nativeEvent.layout.height)}>
-            <MapView profiles={people.filter((p) => !likedIds.has(p.id))} events={events} onLike={(p) => like(p)} height={Math.max(300, areaH - 80)} />
+            <MapView profiles={people.filter((p) => !likedIds.has(p.id))} onLike={(p) => like(p)} height={Math.max(300, areaH - 80)} />
           </View>
         ) : (
           <>

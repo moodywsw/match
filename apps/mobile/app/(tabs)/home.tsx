@@ -11,6 +11,7 @@ import { T } from '@/constants/theme';
 import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useEvents } from '@/hooks/useEvents';
+import { fmtEventDate } from '@/lib/events';
 import { hash01, interestIcon, LIVE_ROOMS, type LiveRoom, type Person } from '@/lib/mock';
 
 const CARD_SHADOW = { shadowColor: '#000', shadowOpacity: 0.55, shadowRadius: 20, shadowOffset: { width: 0, height: 18 } };
@@ -103,19 +104,34 @@ export default function HomeTab() {
 
         <SectionTitle title="Events near you" action="See all" onAction={() => router.navigate('/(tabs)/events')} />
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -18 }} contentContainerStyle={{ gap: 12, paddingHorizontal: 18, paddingBottom: 8 }}>
-          {events.slice(0, 3).map((e) => (
-            <Pressable key={e.id} onPress={() => router.navigate('/(tabs)/events')} style={{ width: 190, backgroundColor: T.surface, borderRadius: 18, overflow: 'hidden', borderWidth: 1, borderColor: T.border }}>
-              <Photo uri={e.cover} name={e.title} style={{ width: '100%', height: 90 }} />
-              <View style={{ paddingVertical: 10, paddingHorizontal: 12 }}>
-                <Txt w={700} size={13} numberOfLines={1}>
-                  {e.title}
-                </Txt>
-                <Txt size={11} color={T.muted} style={{ marginTop: 3 }}>
-                  {e.date} · {e.location}
-                </Txt>
-              </View>
+          {events
+            .filter((e) => e.status === 'scheduled')
+            .slice(0, 3)
+            .map((e) => (
+              <Pressable key={e.id} onPress={() => router.push({ pathname: '/event/[eventId]', params: { eventId: e.id } })} style={{ width: 190, backgroundColor: T.surface, borderRadius: 18, overflow: 'hidden', borderWidth: 1, borderColor: T.border }}>
+                <Photo uri={e.cover_url} name={e.title} style={{ width: '100%', height: 90 }} />
+                <View style={{ paddingVertical: 10, paddingHorizontal: 12 }}>
+                  <Txt w={700} size={13} numberOfLines={1}>
+                    {e.title}
+                  </Txt>
+                  <Txt size={11} color={T.muted} style={{ marginTop: 3 }} numberOfLines={1}>
+                    {fmtEventDate(e.starts_at)}
+                    {e.distance_km != null ? ` · ~${e.distance_km} km` : e.city ? ` · ${e.city}` : ''}
+                  </Txt>
+                </View>
+              </Pressable>
+            ))}
+          {!events.some((e) => e.status === 'scheduled') ? (
+            <Pressable onPress={() => router.navigate('/(tabs)/events')} style={{ width: 190, height: 140, backgroundColor: T.surface, borderRadius: 18, borderWidth: 1, borderColor: T.border, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
+              <Txt size={22}>🎉</Txt>
+              <Txt w={700} size={13} center style={{ marginTop: 6 }}>
+                Host the first event
+              </Txt>
+              <Txt size={11} color={T.muted} center style={{ marginTop: 3 }}>
+                Meet your matches in real life
+              </Txt>
             </Pressable>
-          ))}
+          ) : null}
         </ScrollView>
       </FadeUp>
       <LiveRoomView room={liveRoom} onClose={() => setLiveRoom(null)} />

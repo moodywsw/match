@@ -26,8 +26,9 @@ export type DiscoverProfile = {
   intention: string | null;
   verified: boolean;
   is_discoverable: boolean;
-  approx_lat: number | null;
-  approx_lng: number | null;
+  /** Whole km computed server-side from ~1.5 km grid cells (null = hidden/unknown). */
+  distanceKm: number | null;
+  fridayAnswer: string | null;
   photoUrl: string | null;
   age: number | null;
   interests: string[];
@@ -186,8 +187,8 @@ export async function fetchDiscoverDeck(
     bio: string | null;
     intention: string | null;
     verified: boolean | null;
-    approx_lat: number | null;
-    approx_lng: number | null;
+    friday_answer: string | null;
+    distance_km: number | null;
     boosted: boolean | null;
     super_liked_me: boolean | null;
   };
@@ -207,8 +208,8 @@ export async function fetchDiscoverDeck(
     intention: r.intention,
     verified: !!r.verified,
     is_discoverable: true,
-    approx_lat: r.approx_lat,
-    approx_lng: r.approx_lng,
+    distanceKm: r.distance_km == null ? null : Number(r.distance_km),
+    fridayAnswer: r.friday_answer,
     photoUrl: photos[r.id] ?? null,
     age: ageFromBirthDate(r.birth_date),
     interests: interestMap[r.id] ?? [],
@@ -282,8 +283,8 @@ export function demoDiscoverProfiles(): DiscoverProfile[] {
       intention: 'serious',
       verified: true,
       is_discoverable: true,
-      approx_lat: null,
-      approx_lng: null,
+      distanceKm: null,
+      fridayAnswer: null,
       photoUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=800&q=80',
       age: 27,
       interests: ['Indie', 'Coffee', 'Live concerts'],
@@ -298,8 +299,8 @@ export function demoDiscoverProfiles(): DiscoverProfile[] {
       intention: 'new_people',
       verified: false,
       is_discoverable: true,
-      approx_lat: null,
-      approx_lng: null,
+      distanceKm: null,
+      fridayAnswer: null,
       photoUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=800&q=80',
       age: 24,
       interests: ['Hiking', 'Photography', 'Coffee'],
@@ -314,8 +315,8 @@ export function demoDiscoverProfiles(): DiscoverProfile[] {
       intention: 'casual',
       verified: true,
       is_discoverable: true,
-      approx_lat: null,
-      approx_lng: null,
+      distanceKm: null,
+      fridayAnswer: null,
       photoUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=800&q=80',
       age: 29,
       interests: ['Live concerts', 'Travel'],
@@ -326,6 +327,7 @@ export function demoDiscoverProfiles(): DiscoverProfile[] {
 
 export type PrivacySettings = {
   show_online_status: boolean;
+  read_receipts: boolean;
   show_distance: boolean;
   is_discoverable: boolean;
   who_can_message: 'everyone' | 'matches';
@@ -334,7 +336,7 @@ export type PrivacySettings = {
 export async function fetchPrivacySettings(userId: string): Promise<PrivacySettings | null> {
   const { data, error } = await supabase
     .from('profiles')
-    .select('show_online_status, show_distance, is_discoverable, who_can_message')
+    .select('show_online_status, read_receipts, show_distance, is_discoverable, who_can_message')
     .eq('id', userId)
     .maybeSingle();
   if (error) throw error;

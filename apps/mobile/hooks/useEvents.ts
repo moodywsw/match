@@ -1,70 +1,83 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { useAuth } from '@/contexts/AuthContext';
-import { fetchUpcomingEvents, rsvpEvent, unrsvpEvent, fetchMyRsvps } from '@/lib/explore';
-import { EVENTS, SHOW_DEMO_CONTENT, type EventItem } from '@/lib/mock';
+import { eventErrorMessage, fetchEvents, setRsvp, type EventDetail, type RsvpStatus } from '@/lib/events';
+import { fetchPrimaryPhotos } from '@/lib/profile';
 
-function fmtDate(iso: string) {
-  const d = new Date(iso);
-  return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
-}
+export type EventFilters = { scope: 'upcoming' | 'mine'; category: string | null; city: string };
 
-/** Real events from public.events; prototype events while the table is empty. */
-export function useEvents() {
+/** Server-backed events (get_events RPC) + attendee avatars + optimistic RSVP. */
+export function useEvents(filters: EventFilters = { scope: 'upcoming', category: null, city: '' }) {
   const { user } = useAuth();
-  const [events, setEvents] = useState<EventItem[]>(SHOW_DEMO_CONTENT ? EVENTS : []);
-  const [going, setGoing] = useState<Record<string, boolean>>({ 'ev-1': true });
+  const [events, setEvents] = useState<EventDetail[]>([]);
+  const [photos, setPhotos] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const reqId = useRef(0);
 
   const load = useCallback(async () => {
+    if (!user?.id) return;
+    const id = ++reqId.current;
     try {
-      const rows = await fetchUpcomingEvents();
-      if (rows.length) {
-        setEvents(
-          rows.map((r) => ({
-            id: r.id,
-            title: r.title,
-            date: fmtDate(r.starts_at),
-            location: r.location || '',
-            cover: r.cover_url,
-            going: 0,
-            category: r.category || 'Event',
-            real: true,
-          }))
-        );
-        if (user?.id) {
-          const mine = await fetchMyRsvps(user.id).catch(() => [] as string[]);
-          setGoing(Object.fromEntries(mine.map((id) => [id, true])));
-        }
+      const rows = await fetchEvents({ scope: filters.scope, category: filters.category, city: filters.city });
+      if (id !== reqId.current) return;
+      setEvents(rows);
+      setError(null);
+      const ids = [...new Set(rows.flatMap((r) => r.attendee_ids))];
+      if (ids.length) {
+        const p = await fetchPrimaryPhotos(ids).catch(() => ({}) as Record<string, string>);
+        if (id === reqId.current) setPhotos((old) => ({ ...old, ...p }));
       }
     } catch (err) {
+      if (id === reqId.current) setError(eventErrorMessage(err));
       console.warn('[match] events load failed', err);
     } finally {
-      setLoading(false);
+      if (id === reqId.current) setLoading(false);
     }
-  }, [user?.id]);
+  }, [user?.id, filters.scope, filters.category, filters.city]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    setLoading(true);
+    const t = setTimeout(() => void load(), filters.city ? 350 : 0);
+    return () => clearTimeout(t);
+  }, [load, filters.city]);
 
-  const toggle = useCallback(
-    async (ev: EventItem): Promise<boolean> => {
-      const next = !going[ev.id];
-      setGoing((g) => ({ ...g, [ev.id]: next }));
-      if (ev.real && user?.id) {
-        try {
-          if (next) await rsvpEvent(ev.id, user.id);
-          else await unrsvpEvent(ev.id, user.id);
-        } catch (err) {
-          setGoing((g) => ({ ...g, [ev.id]: !next }));
-          throw err;
-        }
+  /** Set (or clear, when tapping the active one) my RSVP. Returns the new status. */
+  const rsvp = useCallback(
+    async (ev: EventDetail, status: RsvpStatus): Promise<RsvpStatus | null> => {
+      if (!user?.id) throw new Error('Sign in first');
+      const next: RsvpStatus | null = ev.my_status === status ? null : status;
+      const apply = (from: RsvpStatus | null, to: RsvpStatus | null) =>
+        setEvents((list) =>
+          list.map((e) => {
+            if (e.id !== ev.id) return e;
+            let going = e.going_count;
+            let interested = e.interested_count;
+            if (from === 'going') going--;
+            if (from === 'interested') interested--;
+            if (to === 'going') going++;
+            if (to === 'interested') interested++;
+            const ids = e.attendee_ids.filter((x) => x !== user.id);
+            return {
+              ...e,
+              my_status: to,
+              going_count: Math.max(0, going),
+              interested_count: Math.max(0, interested),
+              attendee_ids: to === 'going' ? [user.id, ...ids].slice(0, 5) : ids,
+            };
+          })
+        );
+      apply(ev.my_status, next);
+      try {
+        await setRsvp(ev.id, user.id, next);
+      } catch (err) {
+        apply(next, ev.my_status);
+        throw new Error(eventErrorMessage(err));
       }
       return next;
     },
-    [going, user?.id]
+    [user?.id]
   );
 
-  return { events, going, toggle, loading, reload: load };
+  return { events, photos, rsvp, loading, error, reload: load };
 }

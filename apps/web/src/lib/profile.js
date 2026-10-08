@@ -56,7 +56,7 @@ export async function upsertOwnProfile(userId, fields) {
 export async function fetchDiscoverableProfiles(excludeUserId, limit = 40) {
   let query = supabase
     .from("profiles")
-    .select("id, name, birth_date, city, bio, intention, verified, is_discoverable, approx_lat, approx_lng")
+    .select("id, name, birth_date, city, bio, intention, verified, is_discoverable")
     .eq("is_discoverable", true)
     .eq("onboarding_complete", true)
     .limit(limit);

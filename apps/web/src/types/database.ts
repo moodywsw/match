@@ -20,8 +20,6 @@ export type Database = {
           city: string | null
           lat: number | null
           lng: number | null
-          approx_lat: number | null
-          approx_lng: number | null
           intention: string | null
           bio: string | null
           verified: boolean
@@ -42,8 +40,6 @@ export type Database = {
           city?: string | null
           lat?: number | null
           lng?: number | null
-          approx_lat?: number | null
-          approx_lng?: number | null
           intention?: string | null
           bio?: string | null
           verified?: boolean

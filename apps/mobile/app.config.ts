@@ -78,6 +78,15 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         },
       ],
       [
+        'expo-location',
+        {
+          locationWhenInUsePermission:
+            'Match uses your approximate location (rounded to about 1.5 km) to show distance and people & events near you. Your exact location is never stored or shared.',
+          isAndroidBackgroundLocationEnabled: false,
+          isIosBackgroundLocationEnabled: false,
+        },
+      ],
+      [
         'expo-notifications',
         {
           icon: './assets/images/notification-icon.png',

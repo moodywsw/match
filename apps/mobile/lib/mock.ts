@@ -99,6 +99,8 @@ export type Person = {
   boosted?: boolean;
   /** This person super liked me — pinned first and highlighted. */
   superLikedMe?: boolean;
+  /** Onboarding "Friday night" answer (FRIDAY_OPTIONS id or free text). */
+  fridayAnswer?: string | null;
 };
 
 const NAMES: [string, number, string][] = [
