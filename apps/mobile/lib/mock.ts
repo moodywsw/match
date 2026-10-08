@@ -175,12 +175,9 @@ function makeProfile(i: number): Person {
 }
 
 export const PROFILES: Person[] = Array.from({ length: 20 }, (_, i) => makeProfile(i));
-export const demoProfile = (n: number) => PROFILES[n - 1];
 
 /** Prototype starts with these demo matches. */
 export const DEMO_MATCHED_IDS = ['demo-3', 'demo-7', 'demo-12'];
-
-export const DEMO_USER_PHOTO = avatar(47);
 
 export const CHAT_PREVIEWS = [
   'Haha okay you have to tell me more about that 😂',
@@ -276,25 +273,6 @@ export const LIVE_CHAT = [
   { user: 'Bruno', text: '🔥🔥🔥' },
 ];
 
-export type EventItem = {
-  id: string;
-  title: string;
-  date: string;
-  location: string;
-  cover: string | null;
-  going: number;
-  category: string;
-  real: boolean;
-};
-
-export const EVENTS: EventItem[] = [
-  { id: 'ev-1', title: 'Rooftop Sunset Mixer', date: 'Fri, Aug 21', location: 'Lisbon', cover: avatar(24, 500), going: 128, category: 'Nightlife', real: false },
-  { id: 'ev-2', title: 'Indie & Vinyl Night', date: 'Sat, Aug 22', location: 'Porto', cover: avatar(63, 500), going: 76, category: 'Music', real: false },
-  { id: 'ev-3', title: 'Singles Dinner Party', date: 'Sun, Aug 23', location: 'Lisbon', cover: avatar(37, 500), going: 54, category: 'Dating', real: false },
-  { id: 'ev-4', title: 'Sunrise Beach Hike', date: 'Sat, Aug 29', location: 'Cascais', cover: avatar(15, 500), going: 41, category: 'Travel', real: false },
-  { id: 'ev-5', title: 'Festival Weekend: NOS Alive', date: 'Sep 4–6', location: 'Lisbon', cover: avatar(48, 500), going: 980, category: 'Festival', real: false },
-];
-
 export const NOTIFS = [
   { icon: '❤️', text: 'Sarah liked your profile', time: '2m' },
   { icon: '🔥', text: "It's a match with Alex — 91%!", time: '18m' },
@@ -314,9 +292,4 @@ export function hash01(s: string, salt = 0): number {
     h = Math.imul(h, 16777619);
   }
   return ((h >>> 0) % 10000) / 10000;
-}
-
-/** Pseudo map position (percent) — never a real location. */
-export function pseudoPos(id: string, salt = 0) {
-  return { x: 7 + hash01(id, salt) * 86, y: 10 + hash01(id, salt + 7) * 74 };
 }

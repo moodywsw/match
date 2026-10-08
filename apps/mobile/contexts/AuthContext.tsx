@@ -9,7 +9,7 @@ import React, {
 } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
 
-import { registerForPushNotifications } from '@/lib/notifications';
+import { clearPushToken, registerForPushNotifications } from '@/lib/notifications';
 import { ensureProfileStub, type Profile } from '@/lib/profile';
 import { supabase } from '@/lib/supabase';
 
@@ -31,6 +31,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const pushAttempted = useRef<string | null>(null);
+  const pushToken = useRef<{ uid: string; token: string } | null>(null);
 
   const loadProfile = useCallback(async (user: User) => {
     try {
@@ -79,6 +80,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!uid || pushAttempted.current === uid) return;
     pushAttempted.current = uid;
     registerForPushNotifications(uid).then((result) => {
+      if (result.token) pushToken.current = { uid, token: result.token };
       if (result.status !== 'registered') {
         console.info('[match] push registration:', result.status, result.detail ?? '');
       }
@@ -111,6 +113,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signOut = useCallback(async () => {
+    // Unlink this device's push token first (needs the session for RLS) so the
+    // next person signing in here doesn't receive the previous user's pushes.
+    const reg = pushToken.current;
+    pushToken.current = null;
+    if (reg) await clearPushToken(reg.uid, reg.token).catch(() => {});
     await supabase.auth.signOut();
     setProfile(null);
     pushAttempted.current = null;

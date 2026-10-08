@@ -31,6 +31,10 @@ The migrations involved are `20261008_security_hardening.sql`, `20261008_securit
 - **Location.** The exact position is never stored. `private.user_locations` holds a cell of
   about 1 km behind a restrictive deny-all policy. Distances are rounded, and map pins get a
   deterministic jitter of ±0.6 km per viewer.
+- **Push tokens.** A device token only ever belongs to the account signed in on it now. Sign-out
+  deletes it, and the `push_tokens_handoff` trigger unlinks it from every other account when it's
+  registered again (this covers offline sign-outs and reinstalls), so a shared phone never gets
+  the previous user's pushes.
 - **Blocks.** Blocking works both ways. It hides profiles, photos, posts, comments, post likes,
   interests, stories, events, live rooms and live chat, and it stops chat and conversation
   creation.
@@ -143,6 +147,15 @@ Expired story media is deleted hourly by the `cleanup-story-media` function and 
 | `delete-account` | verify_jwt | Needs `{confirm:"DELETE"}`. Deletes the caller's storage objects and auth user; their data cascades. |
 | `revenuecat-webhook` | shared secret | Constant-time compare against `REVENUECAT_WEBHOOK_SECRET`. Returns 503 until it's set. |
 | `cleanup-story-media` | verify_jwt | Idempotent garbage collection of orphaned story files, triggered by pg_cron. |
+
+## Tests
+
+- `supabase/tests/core_flows.sql`: a rolled-back suite that runs the core flows as real
+  `authenticated` users. It covers privacy (DOB, column grants, blocks, outsiders), escalation
+  attempts (self-verify, report status, unhiding), moderation auto-hide, capacity, live grants,
+  rate limits, anon lockout and push-token handoff. It finishes with `ALL_TESTS_PASSED:`.
+- `apps/mobile/test`: Jest smoke tests that render every route through the real auth gate and
+  providers with a mocked Supabase, plus the Expo Go live-room gating.
 
 ## Needs the owner (dashboard and accounts)
 

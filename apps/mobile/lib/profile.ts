@@ -79,14 +79,6 @@ export function ageFromBirthDate(birthDate: string | null | undefined): number |
   return age;
 }
 
-export const INTENTION_LABELS: Record<string, string> = {
-  serious: 'Serious relationship',
-  casual: 'Casual dating',
-  new_people: 'New people',
-  friendship: 'Friendship',
-  figuring_out: 'Still figuring it out',
-};
-
 const OWN_PROFILE_COLS =
   'id, name, birth_date, gender, city, bio, intention, friday_answer, verified, is_discoverable, onboarding_complete, created_at, updated_at';
 
@@ -276,60 +268,6 @@ export async function sendLike(
   }
 
   return { like: data, match };
-}
-
-/** Local-only demo cards when the live deck is empty. */
-export function demoDiscoverProfiles(): DiscoverProfile[] {
-  return [
-    {
-      id: 'demo-alex',
-      name: 'Alex',
-      birth_date: defaultBirthDate(27),
-      city: 'Lisbon',
-      bio: 'Vinyl, late dinners, and bad puns. Demo card — not in Supabase.',
-      intention: 'serious',
-      verified: true,
-      is_discoverable: true,
-      distanceKm: null,
-      fridayAnswer: null,
-      photoUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=800&q=80',
-      age: 27,
-      interests: ['Indie', 'Coffee', 'Live concerts'],
-      isLive: false,
-    },
-    {
-      id: 'demo-maya',
-      name: 'Maya',
-      birth_date: defaultBirthDate(24),
-      city: 'Porto',
-      bio: 'Design, hiking, matcha. Demo card for empty discovery.',
-      intention: 'new_people',
-      verified: false,
-      is_discoverable: true,
-      distanceKm: null,
-      fridayAnswer: null,
-      photoUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=800&q=80',
-      age: 24,
-      interests: ['Hiking', 'Photography', 'Coffee'],
-      isLive: false,
-    },
-    {
-      id: 'demo-jordan',
-      name: 'Jordan',
-      birth_date: defaultBirthDate(29),
-      city: 'Faro',
-      bio: 'Live music and road trips. Demo only.',
-      intention: 'casual',
-      verified: true,
-      is_discoverable: true,
-      distanceKm: null,
-      fridayAnswer: null,
-      photoUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=800&q=80',
-      age: 29,
-      interests: ['Live concerts', 'Travel'],
-      isLive: false,
-    },
-  ];
 }
 
 export type PrivacySettings = {

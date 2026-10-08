@@ -39,10 +39,6 @@ function loadLiveKit(): LK | null {
 }
 
 /** True when this binary can do real video (dev/production build with LiveKit linked). */
-export function liveVideoSupported(): boolean {
-  return loadLiveKit() !== null;
-}
-
 export type LiveVideoStatus = 'unsupported' | 'connecting' | 'live' | 'not_configured' | 'ended' | 'not_allowed' | 'error';
 
 export function LiveVideo({ streamId, onStatus }: { streamId: string; onStatus?: (s: LiveVideoStatus) => void }) {

@@ -27,8 +27,6 @@ export const T = {
 /** Primary CTA gradient: linear-gradient(90deg, rose, #FF7A63) */
 export const PRIMARY_GRADIENT = [T.rose, T.coral] as const;
 /** Match ring gradient: rose -> amber -> violet */
-export const RING_GRADIENT = [T.rose, T.amber, T.violet] as const;
-
 /** Hex colour + alpha suffix helper, e.g. withAlpha(T.rose, '22'). */
 export const withAlpha = (hex: string, alpha: string) => `${hex}${alpha}`;
 

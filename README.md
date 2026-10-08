@@ -40,8 +40,9 @@ cd apps/mobile
 cp .env.example .env
 # set EXPO_PUBLIC_SUPABASE_ANON_KEY from Dashboard → Settings → API
 npm install
-npm start                 # Expo Go
-npm run typecheck
+npm start                 # Expo Go (expo-dev-client is installed: use `npx expo start --tunnel --go` for a tunnel)
+npm run typecheck         # app + tests
+npm test                  # jest smoke tests: every route renders with a mocked Supabase
 npx expo-doctor
 ```
 
@@ -94,21 +95,9 @@ Nothing below invents credentials — you create them in Apple / Google / Expo d
 
 - Client: `lib/notifications.ts` requests permission and upserts into `public.push_tokens`.
 - Delivery: Edge Function **`send-push`** (`supabase/functions/send-push`) looks up tokens and POSTs to the [Expo Push API](https://docs.expo.dev/push-notifications/sending-notifications/) (no Expo account secret required for basic `ExponentPushToken[…]` sends).
-- `verify_jwt: true` — call with a user access token (must be matched with `user_id`) or the **service role** JWT for trusted server/webhook paths.
-- Chat already soft-invokes `send-push` after a successful message send.
-
-**Test (user JWT — after two matched users have tokens):**
-
-```bash
-# In apps/mobile, sign in, grant notifications (needs real EAS projectId for a token).
-# Then from a shell with the sender's access token:
-curl -s -X POST \
-  "https://pkpdheytmbwvqhpcaigm.supabase.co/functions/v1/send-push" \
-  -H "Authorization: Bearer $USER_ACCESS_TOKEN" \
-  -H "apikey: $SUPABASE_ANON_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"user_id":"<matched_recipient_uuid>","title":"Test","body":"Hello from send-push"}'
-```
+- `verify_jwt: true`. With a **user access token** only the server-built modes work: `{"notification_for":"<recipient uuid>"}` pushes the newest notification row the DB triggers wrote for that recipient with the caller as actor (message, match, like, comment, story reply…), and `{"event_notifications":"<event uuid>"}` pushes an event creator's update/cancel rows. Clients can't send free-form title/body text.
+- The app calls it after sending a message, liking, commenting and so on (`lib/push.ts`), and after editing or cancelling an event (`lib/events.ts`).
+- A device token belongs to whoever is signed in now. Sign-out deletes the row, and a DB trigger unlinks the token from any other account when it's registered again.
 
 **Test / production invoke (service role — never commit this key):**
 
