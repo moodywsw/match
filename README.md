@@ -130,7 +130,22 @@ Store the service role only in Supabase secrets / CI — never in the repo or cl
 
 - `apps/mobile/lib/iap.ts` wraps `react-native-purchases`. Keys: `EXPO_PUBLIC_REVENUECAT_IOS_KEY` / `_ANDROID_KEY` (empty = paywall shows, purchases disabled, no crash). In **Expo Go** the SDK runs in *Preview API Mode* (simulated purchases).
 - **Entitlements come only from the server**: `public.subscriptions`, written exclusively by the `revenuecat-webhook` Edge Function (service role). Clients have SELECT on their own rows only; `get_my_tier()` returns `free | match_plus | super_match`.
-- DB-enforced gating: free = 25 likes + 1 super like / 24h; MATCH+ = unlimited likes + 5 super likes; SUPER MATCH = unlimited. "Who liked you" via `get_likes_received()` (raises `premium_required` for free users).
+- DB-enforced perks (`supabase/migrations/20261008_premium_perks.sql`; errors are `P0001` codes such as `premium_required`, `daily_like_limit`, `super_like_limit`, `boost_quota`, `already_matched`):
+
+  | Perk | Free | MATCH+ | SUPER MATCH | Server piece |
+  |---|---|---|---|---|
+  | Likes / 24h | 25 | ∞ | ∞ | `enforce_like_limits` trigger |
+  | Super likes | 1 / 24h | 5 / day | ∞ | same trigger; `on_super_like_notify` → `notifications(type='super_like')` + push; `super_liked_me` pins them first in the recipient's deck |
+  | Filters | distance + age | + verified, intention, 1 km / 1 yr precision | same | `get_discover_deck(...)` ignores advanced filters for free |
+  | See who liked you | count | list | list | `get_likes_received()` |
+  | Rewind | — | ✓ | ✓ | `rewind_last_swipe()` (last like/pass ≤ 24h, refuses if matched); passes stored in `public.passes` |
+  | Why you match | teaser | 7 dims | 7 dims | client-side (`lib/compat.ts`) |
+  | Boost 30 min | — | 1 / month | 1 / month | `boosts`, `activate_boost()`, `get_boost_status()`; boosted users ordered first |
+  | Incognito | — | — | ✓ | `profiles.incognito` (trigger-gated) + profiles RLS + deck: only people you liked can see you |
+  | Profile views | count | count | list | `record_profile_view()`, `get_profile_viewers_count()`, `get_profile_viewers()` |
+  | Message priority | — | — | ✓ | `messages.is_priority` set by trigger on a SUPER MATCH user's first message; pinned + badged in Messages |
+
+  Paywall copy (pt-PT / EN, plan lists + comparison): `apps/mobile/lib/plans.ts`.
 - Setup steps: `docs/STORE_CHECKLIST.md`.
 
 ## What’s real vs stub (mobile)

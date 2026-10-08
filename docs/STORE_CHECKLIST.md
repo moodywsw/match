@@ -35,6 +35,8 @@ bundle id / package `com.match.app` · Supabase project `pkpdheytmbwvqhpcaigm`.
   - `super_match_monthly`: 1 month, €24.99
   - Put SUPER MATCH at a higher level than MATCH+ in the group, so moving between them
     counts as an upgrade or downgrade.
+  - Subscription localizations (display name / description, ≤ 55 chars) — see
+    "Subscription copy" below. Product ids and prices are unchanged by the perk set.
 - [ ] App Store Server Notifications V2 → set the URL that RevenueCat gives you (step 3).
 - [ ] App Privacy questionnaire: declare email, name, photos, user content (messages, video,
       audio), coarse location, purchase history, identifiers (push token), sensitive info
@@ -63,6 +65,37 @@ bundle id / package `com.match.app` · Supabase project `pkpdheytmbwvqhpcaigm`.
 - [ ] FCM for push (Android): download `google-services.json` from Firebase, set
       `GOOGLE_SERVICES_JSON=./google-services.json` (git-ignored), then upload the FCM V1
       key with `eas credentials`.
+
+- [ ] Subscription localizations (pt-PT + English): same display names and descriptions as
+      in "Subscription copy" below; list the benefits in the base plan description.
+
+## Subscription copy (must match the in-app paywall)
+
+The paywall copy lives in `apps/mobile/lib/plans.ts` (pt-PT / EN). Store descriptions must
+not promise anything the app doesn't deliver (App Review 3.1.2 / Play subscriptions policy).
+There is **no "unlimited messages" perk** — messaging is free for every match. Boosts and
+super likes are included in the subscriptions; there are **no consumable products**.
+
+| | Free | MATCH+ (`match_plus_monthly`) | SUPER MATCH (`super_match_monthly`) |
+|---|---|---|---|
+| Likes | 25 / 24h | Unlimited | Unlimited |
+| Super likes (recipient notified + highlighted) | 1 / 24h | 5 / day | Unlimited |
+| Filters | Basic (distance, age) | + verified only, intention, exact age & distance | same as MATCH+ |
+| See who liked you | — | ✓ | ✓ |
+| Rewind last swipe (if no match formed) | — | ✓ | ✓ |
+| "Why you match" | Teaser (2 of 7 + 1 reason) | All 7 dimensions | All 7 dimensions |
+| Boost (30 min at top of Discover) | — | 1 / month | 1 / month |
+| Incognito (only people you liked see you) | — | — | ✓ |
+| See who viewed your profile | count only | count only | ✓ list |
+| Message priority (first message pinned + badge) | — | — | ✓ |
+
+All of the above is enforced server-side (`supabase/migrations/20261008_premium_perks.sql`)
+except the "why you match" teaser, which is computed on the device.
+
+| Product | Display name | Description EN (≤ 55) | Descrição pt-PT (≤ 55) |
+|---|---|---|---|
+| `match_plus_monthly` | MATCH+ | Unlimited likes, see who liked you, rewind & boost | Likes ilimitados, vê quem gostou de ti, rewind e boost |
+| `super_match_monthly` | SUPER MATCH | Incognito, who viewed you, unlimited super likes | Incógnito, quem te visitou e super likes ilimitados |
 
 ## 3. RevenueCat
 
