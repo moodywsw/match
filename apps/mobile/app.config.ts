@@ -19,6 +19,18 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     userInterfaceStyle: 'dark',
     backgroundColor: '#15121C',
     owner: process.env.EXPO_OWNER || 'moidys-team',
+    // EAS Update (OTA). Each build profile has its own channel in eas.json
+    // (development / preview / production). The runtime is the native
+    // fingerprint: an update only reaches builds whose native code it matches.
+    // If a native dependency or config changes, the fingerprint changes, and
+    // old installs simply don't get that update (they need a new build) instead
+    // of crashing on a missing native module.
+    runtimeVersion: { policy: 'fingerprint' },
+    updates: {
+      url: `https://u.expo.dev/${easProjectId}`,
+      checkAutomatically: 'ON_LOAD',
+      fallbackToCacheTimeout: 0,
+    },
     ios: {
       supportsTablet: true,
       bundleIdentifier: 'com.match.app',

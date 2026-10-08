@@ -62,9 +62,7 @@ bundle id / package `com.match.app` · Supabase project `pkpdheytmbwvqhpcaigm`.
       privacy-policy site.
 - [ ] Content rating questionnaire (dating, user-generated content) and target audience
       18+ only.
-- [ ] FCM for push (Android): download `google-services.json` from Firebase, set
-      `GOOGLE_SERVICES_JSON=./google-services.json` (git-ignored), then upload the FCM V1
-      key with `eas credentials`.
+- [ ] FCM for push (Android). See "Adding Firebase (FCM) later" in section 6b.
 
 - [ ] Subscription localizations (pt-PT + English): same display names and descriptions as
       in "Subscription copy" below; list the benefits in the base plan description.
@@ -224,6 +222,57 @@ eas submit -p android --profile production --latest   # goes to the internal tra
 
 `appVersionSource: remote` combined with `autoIncrement` means EAS manages the build
 numbers. Bump `version` in `app.config.ts` for each store release.
+
+## 6b. Android sideload build + OTA updates (EAS Update)
+
+**What is set up**
+- `expo-updates` is installed, and `updates.url` points to `https://u.expo.dev/<projectId>`.
+- Each build profile has its own channel in `eas.json`: `development`, `preview`, `production`.
+- `runtimeVersion: { policy: 'fingerprint' }`. The runtime is a hash of the native layer:
+  native dependencies, config plugins and native config. An OTA update only goes to installs
+  whose native code it matches.
+  - We chose this over `appVersion` because it fails safe. With `appVersion`, adding a native
+    module without bumping `version` would ship JS to installs that lack the module, and the app
+    would crash. With `fingerprint`, the worst case is that an update isn't offered to an old
+    install and you need a new build.
+- `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY` are EAS environment variables
+  for development, preview and production (`eas env:list --environment preview`). They are public
+  values; the service_role key is **never** stored there or in the app.
+- Android signing: EAS generated and stores the keystore (`eas credentials -p android` to view or
+  back it up). Keep that keystore: Play updates must be signed with the same key, or you use
+  Play App Signing.
+
+**Build and install the APK (no Play Store, no dev server)**
+```bash
+cd apps/mobile
+npx eas-cli build -p android --profile preview --non-interactive --no-wait
+npx eas-cli build:list -p android --limit 1      # status, artifact URL
+```
+Open the build page on the phone, or scan the QR code, then tap **Install**. Android asks you to
+allow installing from the browser ("Install unknown apps") once.
+
+**Ship a JS-only change OTA (no reinstall)**
+```bash
+npx eas-cli update --channel preview --environment preview --message "what changed"
+```
+The app downloads the update on launch and applies it on the next cold start: close it from
+recents and open it again. Always pass `--environment preview` so the update gets the same
+EXPO_PUBLIC values as the build. If you changed anything native (a new library with native code,
+a config plugin, permissions, `app.config.ts` native fields), the fingerprint changes. In that
+case, build a new APK instead (`npx eas-cli fingerprint:compare` shows what changed).
+
+**Adding Firebase (FCM) later**, needed for Android push delivery. Builds work without it;
+push just isn't delivered.
+1. In the Firebase console, add an Android app with package `com.match.app` and download
+   `google-services.json`. Don't commit it.
+2. Make it available to cloud builds as a file variable:
+   `npx eas-cli env:create --name GOOGLE_SERVICES_JSON --type file --value ./google-services.json --visibility secret --environment preview --environment production --environment development`.
+   `app.config.ts` already reads `process.env.GOOGLE_SERVICES_JSON`.
+3. Upload an FCM V1 service-account key in Firebase → Project settings → Service accounts →
+   Generate key, then run `npx eas-cli credentials -p android`, choose Google Service Account,
+   then FCM V1.
+4. Rebuild the APK. This is a native change, so the fingerprint changes and old installs need
+   the new APK.
 
 ## 7. Store listing assets (to create)
 

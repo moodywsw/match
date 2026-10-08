@@ -79,12 +79,13 @@ Nothing below invents credentials — you create them in Apple / Google / Expo d
 
 3. **Google Play Console** — https://play.google.com/console  
    - Create the app with package `com.match.app` (or update `android.package`).  
-   - For FCM: Firebase project → download `google-services.json`, keep it local, set `GOOGLE_SERVICES_JSON=./google-services.json` for builds (gitignored).  
+   - For FCM, follow "Adding Firebase (FCM) later" in `docs/STORE_CHECKLIST.md` §6b: upload `google-services.json` as an EAS file variable `GOOGLE_SERVICES_JSON`, add the FCM V1 key with `eas credentials`, then rebuild.  
    - For `eas submit`: create a Play service account JSON, store as `google-service-account.json` (gitignored); path is referenced in `eas.json`.
 
 4. **Build profiles** (already in `apps/mobile/eas.json`):
    ```bash
-   eas build --profile preview --platform android   # internal APK
+   eas build --profile preview --platform android   # internal APK (sideload), OTA channel "preview"
+   eas update --channel preview --environment preview --message "..."   # JS-only OTA to installed APKs
    eas build --profile preview --platform ios       # TestFlight/ad-hoc via EAS
    eas build --profile production --platform all
    eas submit --profile production --platform ios
