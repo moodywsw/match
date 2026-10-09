@@ -29,3 +29,4 @@ google-services.json
 
 # seeded test account credentials (supabase/seed)
 TEST_ACCOUNTS.md
+__pycache__/
