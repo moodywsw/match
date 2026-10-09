@@ -16,6 +16,8 @@ import { View } from 'react-native';
 import 'react-native-reanimated';
 
 import { LitMatch } from '@/components/ui/LitMatch';
+import { PrimaryButton, TextButton } from '@/components/ui/primitives';
+import { Txt } from '@/components/ui/Txt';
 import { T } from '@/constants/theme';
 import { AppProvider } from '@/contexts/AppContext';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
@@ -31,7 +33,7 @@ const theme = {
 };
 
 function AuthGate({ children, fontsReady }: { children: React.ReactNode; fontsReady: boolean }) {
-  const { session, profile, loading } = useAuth();
+  const { session, profile, loading, profileError, recovery, refreshProfile, signOut } = useAuth();
   const segments = useSegments();
   const router = useRouter();
 
@@ -43,18 +45,25 @@ function AuthGate({ children, fontsReady }: { children: React.ReactNode; fontsRe
     const onLanding = !root || root === 'index';
     // Legal pages are reachable signed in or out (sign-up, paywall, settings).
     if (root === 'legal') return;
+    // Password reset link: the user must choose a new password before anything else.
+    if (recovery) {
+      if (root !== 'reset-password') router.replace('/reset-password');
+      return;
+    }
+    if (root === 'reset-password') return;
 
     if (!session) {
       if (!inAuth && !onLanding) router.replace('/');
       return;
     }
     // Signed in but no complete profile yet → prototype onboarding flow.
+    if (profileError) return;
     if (!profile || !profile.onboarding_complete) {
       if (!inOnboarding) router.replace('/(onboarding)');
       return;
     }
     if (inAuth || inOnboarding || onLanding) router.replace('/(tabs)/home');
-  }, [session, profile, loading, fontsReady, segments, router]);
+  }, [session, profile, loading, profileError, recovery, fontsReady, segments, router]);
 
   useEffect(() => {
     if (!loading && fontsReady) SplashScreen.hideAsync();
@@ -64,6 +73,21 @@ function AuthGate({ children, fontsReady }: { children: React.ReactNode; fontsRe
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: T.ink }}>
         <LitMatch size={28} />
+      </View>
+    );
+  }
+  if (profileError && !recovery) {
+    return (
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: T.ink, padding: 32, gap: 14 }}>
+        <LitMatch size={28} />
+        <Txt v="display" size={22} center>
+          We couldn't load your profile
+        </Txt>
+        <Txt size={14} color={T.muted} center>
+          Check your connection and try again.
+        </Txt>
+        <PrimaryButton label="Try again" onPress={() => void refreshProfile()} style={{ alignSelf: 'stretch', marginTop: 8 }} />
+        <TextButton label="Sign out" onPress={() => void signOut()} />
       </View>
     );
   }
@@ -103,6 +127,7 @@ export default function RootLayout() {
                 <Stack.Screen name="story/[storyId]" options={{ animation: 'slide_from_right' }} />
                 <Stack.Screen name="legal/privacy" options={{ animation: 'slide_from_bottom' }} />
                 <Stack.Screen name="legal/terms" options={{ animation: 'slide_from_bottom' }} />
+                <Stack.Screen name="reset-password" options={{ animation: 'fade', gestureEnabled: false }} />
                 <Stack.Screen name="+not-found" />
               </Stack>
             </CallProvider>

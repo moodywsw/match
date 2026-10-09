@@ -7,7 +7,7 @@ import { act, fireEvent } from '@testing-library/react-native';
 import { renderRouter } from 'expo-router/testing-library';
 import path from 'path';
 
-import { OTHER, state } from './supabaseMock';
+import { authCalls, OTHER, state } from './supabaseMock';
 
 const APP_DIR = path.resolve(__dirname, '../app');
 
@@ -107,6 +107,37 @@ describe('signed out', () => {
     const view = await open(url);
     expect(view.toJSON()).not.toBeNull();
     expect(view.getPathname()).toBe(expected);
+    expect(errors).toEqual([]);
+  });
+});
+
+describe('forgot password (signed out)', () => {
+  beforeEach(() => {
+    state.signedIn = false;
+    authCalls.length = 0;
+  });
+  test('sign-in → "Forgot password?" sends a reset email with an app deep link', async () => {
+    const view = await open('/sign-in');
+    await act(async () => {
+      fireEvent.press(view.getByText('Forgot password?'));
+    });
+    expect(view.getByText('Send reset link')).toBeTruthy();
+    await act(async () => {
+      fireEvent.changeText(view.getByPlaceholderText('Email'), '  Ana@Example.com ');
+    });
+    await act(async () => {
+      fireEvent.press(view.getByText('Send reset link'));
+    });
+    const call = authCalls.find((c) => c.fn === 'resetPasswordForEmail');
+    expect(call?.args[0]).toBe('ana@example.com');
+    expect(String((call?.args[1] as { redirectTo?: string })?.redirectTo)).toMatch(/reset-password$/);
+    expect(view.getByText(/reset link is on its way/)).toBeTruthy();
+    expect(errors).toEqual([]);
+  });
+  test('/reset-password renders without a session', async () => {
+    const view = await open('/reset-password');
+    expect(view.toJSON()).not.toBeNull();
+    expect(view.getPathname()).toBe('/reset-password');
     expect(errors).toEqual([]);
   });
 });

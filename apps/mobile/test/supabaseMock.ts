@@ -10,6 +10,14 @@ export const OTHER = '00000000-0000-4000-8000-000000000002';
 const NOW = new Date('2026-10-08T12:00:00Z').toISOString();
 
 export const state = { signedIn: true, onboarded: true };
+/** Auth calls the app made (for asserting forgot-password / reset flows). */
+export const authCalls: { fn: string; args: unknown[] }[] = [];
+const track =
+  (fn: string, result: unknown = { data: {}, error: null }) =>
+  async (...args: unknown[]) => {
+    authCalls.push({ fn, args });
+    return result;
+  };
 
 export const ownProfile = () => ({
   id: ME,
@@ -131,5 +139,11 @@ export const supabase = {
     signInWithPassword: async () => ({ data: {}, error: null }),
     signUp: async () => ({ data: {}, error: null }),
     signOut: async () => ({ error: null }),
+    resetPasswordForEmail: track('resetPasswordForEmail'),
+    updateUser: track('updateUser', { data: { user: null }, error: null }),
+    setSession: track('setSession', { data: { session: null }, error: null }),
+    exchangeCodeForSession: track('exchangeCodeForSession', { data: { session: null }, error: null }),
+    startAutoRefresh: async () => {},
+    stopAutoRefresh: async () => {},
   },
 };
