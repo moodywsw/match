@@ -28,6 +28,10 @@ export async function openNotificationTarget(router: Router, type: string | unde
     }
     case 'reward':
       return router.push('/wallet');
+    case 'speed_night':
+      return router.push('/speed');
+    case 'live_invite':
+      return router.push({ pathname: '/speed', params: { tab: 'group' } });
     case 'match': {
       const matchId = str('match_id');
       if (matchId) {

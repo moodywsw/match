@@ -7,7 +7,7 @@ import { act, fireEvent } from '@testing-library/react-native';
 import { renderRouter } from 'expo-router/testing-library';
 import path from 'path';
 
-import { authCalls, liveMock, OTHER, rpcCalls, state, walletMock } from './supabaseMock';
+import { authCalls, groupMock, liveMock, OTHER, rpcCalls, speedMock, state, walletMock } from './supabaseMock';
 
 const APP_DIR = path.resolve(__dirname, '../app');
 
@@ -78,6 +78,7 @@ const signedInRoutes: [string, string][] = [
   [`/story/${OTHER}`, `/story/${OTHER}`],
   ['/legal/privacy', '/legal/privacy'],
   ['/legal/terms', '/legal/terms'],
+  ['/speed', '/speed'],
   ['/', '/home'],
 ];
 
@@ -536,6 +537,126 @@ describe('differentiators', () => {
     await settle();
     expect(view.getByText('Bruno')).toBeTruthy();
     expect(view.getAllByText(/^(29|30)h \d\dm$/).length).toBe(1);
+    expect(errors).toEqual([]);
+  });
+});
+
+describe('speed dating + group rooms (Expo Go runtime)', () => {
+  beforeEach(() => {
+    state.signedIn = true;
+    state.onboarded = true;
+    speedMock.reset();
+    groupMock.reset();
+    rpcCalls.length = 0;
+  });
+  async function settle(n = 6) {
+    for (let i = 0; i < n; i++) {
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(50);
+      });
+    }
+  }
+  const press = async (el: Parameters<typeof fireEvent.press>[0]) => {
+    await act(async () => {
+      fireEvent.press(el);
+    });
+    await settle();
+  };
+
+  test('Live has a Speed Dating category; first date is free; queue can be cancelled', async () => {
+    const view = await open('/live');
+    await settle();
+    expect(view.getByLabelText('Speed Dating category')).toBeTruthy();
+    await press(view.getByLabelText('Speed Dating'));
+    expect(view.getByText('🎟️ Your first date today is free')).toBeTruthy();
+    expect(view.getByText(/Coins back if your date doesn't show up or leaves in the first 20s/)).toBeTruthy();
+    await press(view.getByText('25–35'));
+    await press(view.getByText('Find my date · free'));
+    const join = rpcCalls.find((c) => c.fn === 'speed_join');
+    expect(join?.args).toEqual({ p_min_age: 25, p_max_age: 35, p_max_km: null, p_same_intention: false });
+    expect(view.getByText('Finding your date…')).toBeTruthy();
+    await press(view.getByText('Cancel · coins back'));
+    expect(rpcCalls.some((c) => c.fn === 'speed_leave_queue')).toBe(true);
+    expect(view.getByText('Find my date · free')).toBeTruthy();
+    expect(errors).toEqual([]);
+  });
+
+  test('paid date: shows price and a Top up prompt when coins are short', async () => {
+    speedMock.freeToday = false;
+    speedMock.coins = 20;
+    const view = await open('/speed');
+    await settle();
+    expect(view.getByText('50 coins per date')).toBeTruthy();
+    expect(view.getByText('Top up · need 30 more')).toBeTruthy();
+    expect(view.getByLabelText('Top up, you have 20 coins')).toBeTruthy();
+    expect(errors).toEqual([]);
+  });
+
+  test('before the call → live (photos in Expo Go) → private Match → MATCH moment', async () => {
+    speedMock.phase = 'pending';
+    const view = await open('/speed');
+    await settle();
+    expect(view.getByText('BEFORE THE CALL')).toBeTruthy();
+    expect(view.getByText('✨ You both like Jazz')).toBeTruthy();
+    expect(view.getByText('“Best jazz bar you have ever been to?”')).toBeTruthy();
+    expect(view.getByLabelText('Report')).toBeTruthy();
+    await press(view.getByText(/^I'm ready/));
+    expect(view.getByText(/Video works in the MATCH app/)).toBeTruthy();
+    expect(view.getByLabelText('Leave date')).toBeTruthy();
+    expect(view.getByLabelText('Report')).toBeTruthy();
+    speedMock.phase = 'deciding';
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(3_100);
+    });
+    await settle();
+    expect(view.getByText('Match with Bruno?')).toBeTruthy();
+    expect(view.getByText(/Your pick is private/)).toBeTruthy();
+    await press(view.getByText('Match'));
+    expect(rpcCalls.find((c) => c.fn === 'speed_choose')?.args).toEqual({ p_session: 'sd1', p_choice: 'match' });
+    expect(view.getAllByText(/It's a match with Bruno/).length).toBeGreaterThan(0);
+    expect(errors).toEqual([]);
+  });
+
+  test('report during a date files a report and ends it for free', async () => {
+    speedMock.phase = 'live';
+    const view = await open('/speed');
+    await settle();
+    await press(view.getByLabelText('Report'));
+    await press(view.getByText('Report and leave'));
+    expect(rpcCalls.find((c) => c.fn === 'speed_leave')?.args).toEqual({ p_session: 'sd1', p_reason: 'report' });
+    expect(view.getByText(/This date was ended after a report/)).toBeTruthy();
+    expect(errors).toEqual([]);
+  });
+
+  test('group rooms: lobby modes + invites, roulette room, private picks → matches', async () => {
+    const view = await open('/speed?tab=group');
+    await settle();
+    expect(view.getByText('Bruno invited you')).toBeTruthy();
+    expect(view.getByLabelText('Join Hiking room')).toBeTruthy();
+    expect(view.getByText('Invite matches')).toBeTruthy();
+    await press(view.getByText('Join a roulette room'));
+    expect(rpcCalls.find((c) => c.fn === 'group_join')?.args).toMatchObject({ p_mode: 'roulette' });
+    expect(view.getByText('Roulette room')).toBeTruthy();
+    expect(view.getByLabelText('Leave room')).toBeTruthy();
+    expect(view.getByLabelText('Report')).toBeTruthy();
+    groupMock.phase = 'picking';
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(3_100);
+    });
+    await settle();
+    expect(view.getByText('Who did you like?')).toBeTruthy();
+    await press(view.getByLabelText('Pick Bruno'));
+    await press(view.getByText('Save 1 private pick'));
+    expect(rpcCalls.find((c) => c.fn === 'group_pick')?.args).toEqual({ p_room: 'g1', p_picked: [OTHER] });
+    expect(view.getByText(/You matched with 1 person/)).toBeTruthy();
+    expect(errors).toEqual([]);
+  });
+
+  test('Speed Dating Night banner on Home while it is on', async () => {
+    speedMock.nightActive = true;
+    const view = await open('/home');
+    await settle();
+    expect(view.getByLabelText('Speed Dating Night is on now')).toBeTruthy();
     expect(errors).toEqual([]);
   });
 });

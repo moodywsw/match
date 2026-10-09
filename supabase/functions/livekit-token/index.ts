@@ -15,6 +15,10 @@ import { createClient } from "@supabase/supabase-js";
  * If any is missing the function answers 503 `livekit_not_configured`.
  *
  * Request:  POST { "stream_id": "<uuid>" }   — live room
+ *       or  POST { "speed_id": "<uuid>" }    — 1:1 speed date (`public.get_speed_token_grant`: only the
+ *           two people, only while pending/live → 410 call_ended)
+ *       or  POST { "group_id": "<uuid>" }    — group dating room (`public.get_group_token_grant`: members
+ *           only, everyone publishes, while open/live)
  *       or  POST { "call_id": "<uuid>" }     — 1:1 call between two matches
  *           (`public.get_call_token_grant`: only the caller/callee, never when
  *           blocked, only while ringing (caller) or accepted → 410 call_ended)
@@ -75,15 +79,25 @@ Deno.serve(async (req: Request) => {
 
   let streamId: unknown;
   let callId: unknown;
+  let speedId: unknown;
+  let groupId: unknown;
   try {
     const body = await req.json();
     streamId = body?.stream_id;
     callId = body?.call_id;
+    speedId = body?.speed_id;
+    groupId = body?.group_id;
   } catch {
     return json({ error: "invalid_json" }, 400);
   }
-  const isCall = callId !== undefined && callId !== null;
-  if (isCall) {
+  const isGroup = groupId !== undefined && groupId !== null;
+  const isSpeed = !isGroup && speedId !== undefined && speedId !== null;
+  const isCall = !isGroup && !isSpeed && callId !== undefined && callId !== null;
+  if (isGroup) {
+    if (typeof groupId !== "string" || !UUID_RE.test(groupId)) return json({ error: "invalid_group_id" }, 400);
+  } else if (isSpeed) {
+    if (typeof speedId !== "string" || !UUID_RE.test(speedId)) return json({ error: "invalid_speed_id" }, 400);
+  } else if (isCall) {
     if (typeof callId !== "string" || !UUID_RE.test(callId)) return json({ error: "invalid_call_id" }, 400);
   } else if (typeof streamId !== "string" || !UUID_RE.test(streamId)) {
     return json({ error: "invalid_stream_id" }, 400);
@@ -98,7 +112,11 @@ Deno.serve(async (req: Request) => {
   const { data: userData, error: userErr } = await supabase.auth.getUser();
   if (userErr || !userData?.user) return json({ error: "unauthorized" }, 401);
 
-  const { data, error } = isCall
+  const { data, error } = isGroup
+    ? await supabase.rpc("get_group_token_grant", { p_room: groupId })
+    : isSpeed
+    ? await supabase.rpc("get_speed_token_grant", { p_session: speedId })
+    : isCall
     ? await supabase.rpc("get_call_token_grant", { p_call_id: callId })
     : await supabase.rpc("get_live_token_grant", { p_stream_id: streamId });
   if (error) {
@@ -108,7 +126,7 @@ Deno.serve(async (req: Request) => {
     if (msg.includes("rate_limited")) return json({ error: "rate_limited" }, 429);
     if (msg.includes("not_allowed")) return json({ error: "not_allowed" }, 403);
     if (msg.includes("not_authenticated")) return json({ error: "unauthorized" }, 401);
-    console.error(isCall ? "get_call_token_grant failed" : "get_live_token_grant failed", error);
+    console.error(isGroup ? "get_group_token_grant failed" : isSpeed ? "get_speed_token_grant failed" : isCall ? "get_call_token_grant failed" : "get_live_token_grant failed", error);
     return json({ error: "grant_failed" }, 500);
   }
   const grant = Array.isArray(data) ? data[0] : data;
@@ -117,9 +135,10 @@ Deno.serve(async (req: Request) => {
   }
 
   const now = Math.floor(Date.now() / 1000);
-  const exp = now + (isCall ? 4 * 60 * 60 : TOKEN_TTL_SECONDS);
+  // speed dates are 2 minutes; the token only needs to outlive the date
+  const exp = now + (isGroup ? 30 * 60 : isSpeed ? 10 * 60 : isCall ? 4 * 60 * 60 : TOKEN_TTL_SECONDS);
   const canPublish = grant.can_publish === true;
-  const sources = !canPublish ? [] : isCall && grant.kind === "audio" ? ["microphone"] : ["camera", "microphone"];
+  const sources = !canPublish ? [] : (isCall || isSpeed || isGroup) && grant.kind === "audio" ? ["microphone"] : ["camera", "microphone"];
   const token = await signHs256({
     iss: apiKey,
     sub: grant.identity,
@@ -144,7 +163,7 @@ Deno.serve(async (req: Request) => {
     room: grant.room,
     identity: grant.identity,
     canPublish,
-    kind: isCall ? grant.kind : undefined,
+    kind: isCall || isSpeed || isGroup ? grant.kind : undefined,
     expiresAt: new Date(exp * 1000).toISOString(),
   });
 });

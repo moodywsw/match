@@ -316,6 +316,12 @@ function describe(n: NotificationRow, actorName: string): { title: string; body:
       const coins = typeof n.payload?.coins === "number" ? (n.payload.coins as number) : 50;
       return { title: "🪙 Invite bonus", body: `${actorName} joined with your invite — +${coins} coins for you both` };
     }
+    case "speed_night":
+      return { title: "⚡ Speed Dating Night starts at 21:00", body: "2-minute video dates with people who match your preferences — your first date each day is free" };
+    case "live_invite": {
+      const mode = typeof n.payload?.mode === "string" ? (n.payload.mode as string) : "";
+      return { title: "👥 You're invited to a group date", body: `${actorName} invited you to a ${mode === "friends" ? "private " : ""}group dating room — tap to join` };
+    }
     default:
       return { title: "MATCH", body: "You have a new notification" };
   }
@@ -455,7 +461,7 @@ async function pushEventNotifications(
   return json({ ok: true, sent });
 }
 
-const SYSTEM_TYPES = ["chat_nudge", "match_expiring", "match_expired", "date_feedback", "reward"];
+const SYSTEM_TYPES = ["chat_nudge", "match_expiring", "match_expired", "date_feedback", "reward", "speed_night"];
 
 async function pushSystemSweep(supabaseUrl: string, serviceKey: string): Promise<Response> {
   const admin = createClient(supabaseUrl, serviceKey);

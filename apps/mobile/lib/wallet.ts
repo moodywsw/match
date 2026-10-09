@@ -18,7 +18,7 @@ export type WalletTx = {
   note: string | null;
   created_at: string;
 };
-export type TxKind = 'purchase' | 'purchase_reversal' | 'gift_sent' | 'gift_received' | 'adjustment' | 'reward' | 'boost';
+export type TxKind = 'purchase' | 'purchase_reversal' | 'gift_sent' | 'gift_received' | 'adjustment' | 'reward' | 'boost' | 'speed_date' | 'speed_refund';
 export type CoinPack = { product_id: string; coins: number; sort: number; reference_price?: string | null; bonus_pct?: number };
 export type Gift = { id: string; name: string; emoji: string; coin_price: number; diamond_value: number; animation: 'float' | 'burst' | 'rain' | 'fullscreen'; sort: number };
 export type GiftEvent = { id: string; giftId: string; senderId: string | null; senderName: string; quantity: number; coins: number; createdAt: string };
@@ -107,6 +107,8 @@ export const txLabel: Record<WalletTx['kind'], string> = {
   adjustment: 'Adjustment',
   reward: 'Reward',
   boost: 'Boost',
+  speed_date: 'Speed date',
+  speed_refund: 'Speed date refund',
 };
 
 /* ------------------------------ wallet screen data ------------------------------ */
@@ -146,11 +148,12 @@ export type HistoryRow = {
   emoji: string;
   createdAt: string;
 };
-export type HistoryFilter = 'all' | 'purchases' | 'gifts' | 'rewards';
+export type HistoryFilter = 'all' | 'purchases' | 'gifts' | 'dates' | 'rewards';
 export const HISTORY_FILTERS: { id: HistoryFilter; label: string; kinds: TxKind[] | null }[] = [
   { id: 'all', label: 'All', kinds: null },
   { id: 'purchases', label: 'Purchases', kinds: ['purchase', 'purchase_reversal'] },
   { id: 'gifts', label: 'Gifts', kinds: ['gift_sent', 'gift_received'] },
+  { id: 'dates', label: 'Speed dates', kinds: ['speed_date', 'speed_refund'] },
   { id: 'rewards', label: 'Rewards & boosts', kinds: ['reward', 'boost', 'adjustment'] },
 ];
 

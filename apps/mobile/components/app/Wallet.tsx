@@ -655,6 +655,9 @@ export function WalletView({ need }: { need?: number }) {
         <Txt size={12.5} color={T.text}>
           ⚡ Boost your profile for {o?.boostMinutes ?? 30} min · {fmtCoins(o?.boostCoinPrice ?? 150)} coins
         </Txt>
+        <Txt size={12.5} color={T.text}>
+          💞 Speed dates: your first 1:1 each day is free, then 50 coins · refunded if your date leaves early
+        </Txt>
       </View>
 
       <Label>HISTORY</Label>

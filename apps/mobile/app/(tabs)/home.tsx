@@ -5,6 +5,7 @@ import { Image, Pressable, ScrollView, View } from 'react-native';
 
 import { LiveRoomView } from '@/components/app/LiveRoom';
 import { Screen } from '@/components/app/Screen';
+import { SpeedNightHome } from '@/components/app/SpeedDating';
 import { CompletenessNudge, DailyRewardCard } from '@/components/app/Wallet';
 import { Chip, DarkPill, FadeUp, LiveBadge, Photo, SectionTitle } from '@/components/ui/primitives';
 import { Txt } from '@/components/ui/Txt';
@@ -43,6 +44,7 @@ export default function HomeTab() {
           Here's who matches your vibe today.
         </Txt>
 
+        <SpeedNightHome />
         <DailyRewardCard compact />
         <CompletenessNudge onPress={() => router.navigate('/(tabs)/profile')} />
 

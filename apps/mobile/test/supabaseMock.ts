@@ -115,7 +115,7 @@ const fixtures: Record<string, () => unknown[]> = {
 };
 
 /** RPCs that return a single JSON value (not rows). */
-const scalarFixtures: Record<string, () => unknown> = {
+const scalarFixtures: Record<string, (args?: any) => unknown> = {
   'rpc:get_daily_picks': () => ({
     pick_date: '2026-10-08',
     refreshes_at: new Date(Date.now() + 5 * 3600_000).toISOString(),
@@ -161,6 +161,175 @@ const scalarFixtures: Record<string, () => unknown> = {
     ],
   }),
   'rpc:activate_boost_with_coins': () => ({ ends_at: new Date(Date.now() + 1800_000).toISOString(), balance: 0, price: 150 }),
+  // speed dating
+  'rpc:get_speed_night': () => speedMock.night(),
+  'rpc:speed_status': () => speedMock.status(),
+  'rpc:speed_join': () => {
+    speedMock.phase = 'queued';
+    return speedMock.status();
+  },
+  'rpc:speed_leave_queue': () => {
+    speedMock.phase = 'idle';
+    return speedMock.status();
+  },
+  'rpc:speed_ready': () => {
+    speedMock.phase = 'live';
+    return speedMock.session();
+  },
+  'rpc:speed_leave': (a: { p_reason?: string }) => {
+    speedMock.phase = 'cancelled';
+    speedMock.reason = a?.p_reason === 'report' ? 'reported' : 'partner_left_early';
+    return speedMock.session();
+  },
+  'rpc:speed_choose': (a: { p_choice: 'match' | 'pass' }) => {
+    speedMock.choice = a.p_choice;
+    speedMock.phase = 'done';
+    return speedMock.session();
+  },
+  // group rooms
+  'rpc:group_lobby': () => groupMock.lobby(),
+  'rpc:group_join': () => {
+    groupMock.phase = 'live';
+    return groupMock.room();
+  },
+  'rpc:group_status': () => groupMock.room(),
+  'rpc:group_pick': (a: { p_picked: string[] }) => {
+    groupMock.picked = a.p_picked;
+    groupMock.phase = 'done';
+    return groupMock.room();
+  },
+  'rpc:group_leave': () => {
+    groupMock.phase = 'done';
+    return groupMock.room();
+  },
+  'rpc:group_create_friends': () => {
+    groupMock.phase = 'open';
+    groupMock.mode = 'friends';
+    return { ...groupMock.room(), invited: [OTHER] };
+  },
+  'rpc:group_respond_invite': () => {
+    groupMock.phase = 'open';
+    return groupMock.room();
+  },
+};
+
+const iso = (ms: number) => new Date(Date.now() + ms).toISOString();
+
+/** Mutable speed-dating fixtures (server-authoritative in real life). */
+export const speedMock = {
+  phase: 'idle' as 'idle' | 'queued' | 'pending' | 'live' | 'deciding' | 'done' | 'cancelled',
+  freeToday: true,
+  coins: 42,
+  nightActive: false,
+  choice: null as 'match' | 'pass' | null,
+  reason: null as string | null,
+  reset() {
+    this.phase = 'idle';
+    this.freeToday = true;
+    this.coins = 42;
+    this.nightActive = false;
+    this.choice = null;
+    this.reason = null;
+  },
+  night() {
+    return this.nightActive
+      ? { active: true, starts_at: iso(-600_000), ends_at: iso(3 * 3600_000) }
+      : { active: false, starts_at: iso(2 * 3600_000), ends_at: iso(5 * 3600_000) };
+  },
+  session() {
+    const status = this.phase === 'cancelled' ? 'cancelled' : this.phase === 'done' ? 'done' : this.phase;
+    return {
+      id: 'sd1',
+      status,
+      created_at: iso(-5_000),
+      started_at: status === 'pending' ? null : iso(-1_000),
+      ends_at: status === 'pending' ? null : iso(119_000),
+      ready_deadline: iso(25_000),
+      decide_deadline: iso(180_000),
+      refund_until: iso(19_000),
+      me_ready: status !== 'pending',
+      partner_ready: status !== 'pending',
+      partner_left: false,
+      my_choice: this.choice,
+      outcome: status === 'done' ? (this.choice === 'match' ? 'match' : 'no_match') : null,
+      ended_reason: status === 'cancelled' ? this.reason : status === 'done' ? 'completed' : null,
+      refunded: false,
+      match_id: status === 'done' && this.choice === 'match' ? 'mt9' : null,
+      conversation_id: status === 'done' && this.choice === 'match' ? OTHER : null,
+      shared_interest: 'Jazz',
+      icebreaker: 'Best jazz bar you have ever been to?',
+      partner: { id: OTHER, name: 'Bruno', age: 29, photo: null, intention: 'serious', verified: true },
+    };
+  },
+  status() {
+    const inSession = ['pending', 'live', 'deciding'].includes(this.phase);
+    return {
+      state: inSession ? 'session' : this.phase === 'queued' ? 'queued' : 'idle',
+      session: inSession || this.phase === 'done' || this.phase === 'cancelled' ? this.session() : null,
+      queued_at: this.phase === 'queued' ? iso(-2_000) : null,
+      waiting: 4,
+      price: 50,
+      free_today: this.freeToday,
+      seconds: 120,
+      refund_seconds: 20,
+      coins: this.coins,
+      block: null,
+      missing: [],
+      night: this.night(),
+    };
+  },
+};
+
+/** Mutable group-room fixtures. */
+export const groupMock = {
+  phase: 'none' as 'none' | 'open' | 'live' | 'picking' | 'done',
+  mode: 'roulette' as 'roulette' | 'friends' | 'interests',
+  picked: [] as string[],
+  reset() {
+    this.phase = 'none';
+    this.mode = 'roulette';
+    this.picked = [];
+  },
+  room() {
+    const done = this.phase === 'done';
+    return {
+      id: 'g1',
+      mode: this.mode,
+      title: this.mode === 'friends' ? 'Friday crew' : 'Roulette room',
+      status: this.phase === 'none' ? 'open' : this.phase,
+      ended_reason: done ? 'completed' : null,
+      interest: null,
+      is_host: this.mode === 'friends',
+      created_at: iso(-60_000),
+      started_at: iso(-30_000),
+      ends_at: iso(570_000),
+      picks_until: iso(100_000),
+      max: 10,
+      min: 3,
+      here: 3,
+      members: [
+        { id: ME, name: 'Ana', age: 28, photo: null, verified: false, intention: 'serious', is_me: true, is_host: false, here: true, picked: false, matched: false },
+        { id: OTHER, name: 'Bruno', age: 29, photo: null, verified: true, intention: 'serious', is_me: false, is_host: false, here: true, picked: false, matched: false },
+        { id: 'u-carla', name: 'Carla', age: 31, photo: null, verified: false, intention: 'casual', is_me: false, is_host: false, here: true, picked: false, matched: false },
+      ],
+      picks_done: done,
+      left: false,
+      matches: done ? (this.picked.includes(OTHER) ? [{ id: OTHER, name: 'Bruno', photo: null, match_id: 'mt8', conversation_id: OTHER }] : []) : null,
+      invites: this.mode === 'friends' ? [{ id: OTHER, name: 'Bruno', status: 'pending' }] : null,
+    };
+  },
+  lobby() {
+    return {
+      current: this.phase === 'none' || this.phase === 'done' ? null : this.room(),
+      invites: [{ room_id: 'g2', title: 'Saturday picnic', host: { id: OTHER, name: 'Bruno', photo: null }, created_at: iso(-60_000) }],
+      interest_rooms: [{ room_id: 'g3', interest_id: 7, label: 'Hiking', status: 'live', here: 5, mine: true }],
+      my_interests: [{ id: 7, label: 'Hiking' }, { id: 8, label: 'Jazz' }],
+      block: null,
+      missing: [],
+      max: 10,
+      live_minutes: 10,
+    };
+  },
 };
 
 /** Mutable wallet fixtures. */
@@ -178,10 +347,10 @@ export const rpcCalls: { fn: string; args: unknown }[] = [];
 
 type Result = { data: unknown; error: null; count?: number };
 
-function builder(key: string) {
+function builder(key: string, args?: unknown) {
   let single = false;
   const resolve = (): Result => {
-    if (scalarFixtures[key]) return { data: scalarFixtures[key](), error: null };
+    if (scalarFixtures[key]) return { data: scalarFixtures[key](args), error: null };
     const rows = fixtures[key]?.() ?? [];
     return single ? { data: rows[0] ?? null, error: null } : { data: rows, error: null, count: rows.length };
   };
@@ -224,7 +393,7 @@ export const supabase = {
   from: (table: string) => builder(`table:${table}`),
   rpc: (fn: string, args?: unknown) => {
     rpcCalls.push({ fn, args });
-    return builder(`rpc:${fn}`);
+    return builder(`rpc:${fn}`, args);
   },
   channel: () => channel(),
   removeChannel: async () => 'ok',

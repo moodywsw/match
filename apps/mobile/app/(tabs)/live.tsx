@@ -64,6 +64,11 @@ export default function LiveTab() {
           Jump into a room, or start your own.
         </Txt>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -18, marginBottom: 16 }} contentContainerStyle={{ gap: 8, paddingHorizontal: 18 }}>
+          <Pressable onPress={() => router.push('/speed')} accessibilityRole="button" accessibilityLabel="Speed Dating category" style={{ paddingVertical: 7, paddingHorizontal: 14, borderRadius: 999, borderWidth: 1, borderColor: `${T.amber}88`, backgroundColor: `${T.amber}1A` }}>
+            <Txt w={700} size={12.5} color={T.amber}>
+              ⚡ Speed Dating
+            </Txt>
+          </Pressable>
           {LIVE_CATS.map((c) => (
             <Pressable key={c} onPress={() => setCat(c)} style={{ paddingVertical: 7, paddingHorizontal: 14, borderRadius: 999, borderWidth: 1, borderColor: cat === c ? T.rose : T.border, backgroundColor: cat === c ? `${T.rose}22` : 'transparent' }}>
               <Txt w={600} size={12.5} color={cat === c ? '#fff' : T.muted}>
@@ -72,6 +77,43 @@ export default function LiveTab() {
             </Pressable>
           ))}
         </ScrollView>
+
+        <Pressable
+          onPress={() => router.push('/speed')}
+          accessibilityRole="button"
+          accessibilityLabel="Speed Dating"
+          style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 18, borderWidth: 1, borderColor: `${T.amber}66`, backgroundColor: `${T.amber}14`, marginBottom: 10, opacity: pressed ? 0.85 : 1 })}>
+          <Txt size={26}>⚡</Txt>
+          <View style={{ flex: 1 }}>
+            <Txt w={700} size={14}>
+              Speed Dating
+            </Txt>
+            <Txt size={12} color={T.muted} style={{ marginTop: 2 }}>
+              2-minute 1:1 video dates · first one each day is free
+            </Txt>
+          </View>
+          <Txt w={700} size={12.5} color={T.amber}>
+            Start
+          </Txt>
+        </Pressable>
+        <Pressable
+          onPress={() => router.push({ pathname: '/speed', params: { tab: 'group' } })}
+          accessibilityRole="button"
+          accessibilityLabel="Group dating rooms"
+          style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 18, borderWidth: 1, borderColor: `${T.violet}66`, backgroundColor: `${T.violet}14`, marginBottom: 14, opacity: pressed ? 0.85 : 1 })}>
+          <Txt size={26}>👥</Txt>
+          <View style={{ flex: 1 }}>
+            <Txt w={700} size={14}>
+              Group dating rooms
+            </Txt>
+            <Txt size={12} color={T.muted} style={{ marginTop: 2 }}>
+              Up to 10 people · Roulette, Interests or your Friends
+            </Txt>
+          </View>
+          <Txt w={700} size={12.5} color={T.violet}>
+            Join
+          </Txt>
+        </Pressable>
 
         <Pressable onPress={() => setShowGoLive(true)} style={{ padding: 14, borderRadius: 18, borderWidth: 1, borderStyle: 'dashed', borderColor: `${T.rose}88`, backgroundColor: `${T.rose}11`, marginBottom: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
           <Radio size={16} color={T.rose} />

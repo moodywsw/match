@@ -19,7 +19,9 @@ export type NotificationType =
   | 'match_extended'
   | 'we_met'
   | 'date_feedback'
-  | 'reward';
+  | 'reward'
+  | 'speed_night'
+  | 'live_invite';
 
 export type InboxItem = {
   id: string;
@@ -152,6 +154,10 @@ export function inboxIcon(type: NotificationType): string {
       return '📝';
     case 'reward':
       return '🪙';
+    case 'speed_night':
+      return '⚡';
+    case 'live_invite':
+      return '👥';
     default:
       return '🔔';
   }
@@ -208,6 +214,10 @@ export function inboxText(n: InboxItem): string {
       const coins = typeof n.payload.coins === 'number' ? n.payload.coins : 50;
       return `${n.actorName} joined with your invite — +${coins} coins for you both 🎉`;
     }
+    case 'speed_night':
+      return 'Speed Dating Night starts at 21:00 — 2-minute video dates, your first one each day is free';
+    case 'live_invite':
+      return `${n.actorName} invited you to a group date — tap to join`;
     default:
       return 'New notification';
   }
