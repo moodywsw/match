@@ -22,6 +22,11 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
  *    pushes every un-pushed event_update / event_cancelled row (≤ 2 min old) for that
  *    event whose actor_id is the caller (the event creator) to each attendee.
  *
+ * System sweep — body `{ "system_sweep": true }` (pg_cron, anon or service JWT):
+ *    pushes un-pushed system rows (chat_nudge, match_expiring, match_expired, date_feedback;
+ *    ≤ 30 min old) written by the lifecycle cron. Nothing in the request controls who
+ *    is notified or what it says, so the public anon JWT is enough; each row is claimed once.
+ *
  * Expo Push API accepts ExponentPushToken[...] without an Expo account secret.
  * Do not put Expo or service-role secrets in git; SUPABASE_* are injected by the runtime.
  */
@@ -30,6 +35,7 @@ type PushBody = {
   user_id?: string;
   notification_for?: string;
   event_notifications?: string;
+  system_sweep?: boolean;
   title?: string;
   body?: string;
   data?: Record<string, unknown>;
@@ -113,6 +119,13 @@ Deno.serve(async (req: Request) => {
   }
   if (payload.notification_for !== undefined && !isUuid(payload.notification_for)) {
     return json({ error: "notification_for must be a uuid" }, 400);
+  }
+
+  if (payload.system_sweep === true) {
+    if (role !== "anon" && role !== "service_role") {
+      return json({ error: "system_sweep is for the scheduler" }, 403);
+    }
+    return await pushSystemSweep(supabaseUrl, serviceKey);
   }
 
   if (payload.event_notifications) {
@@ -255,6 +268,18 @@ function describe(n: NotificationRow, actorName: string): { title: string; body:
       const title = typeof n.payload?.title === "string" ? (n.payload.title as string) : "An event";
       return { title: `❌ ${title}`, body: `${actorName} cancelled this event` };
     }
+    case "chat_nudge":
+      return { title: `Say hi to ${actorName} 👋`, body: "You matched a day ago — we've got a few conversation starters for you" };
+    case "match_expiring":
+      return { title: `⏳ Your match with ${actorName} is expiring`, body: "Send a message or tap Extend before the timer runs out" };
+    case "match_expired":
+      return { title: "MATCH", body: `Your match with ${actorName} expired — it's archived in Messages` };
+    case "match_extended":
+      return { title: `${actorName} extended your match ⏳`, body: "You've got more time — say hi!" };
+    case "we_met":
+      return { title: `${actorName} says you met 💛`, body: "Did you? Confirm and share private feedback — only MATCH sees it" };
+    case "date_feedback":
+      return { title: `How was your date with ${actorName}?`, body: "Private feedback keeps MATCH safe — it takes 20 seconds" };
     default:
       return { title: "MATCH", body: "You have a new notification" };
   }
@@ -385,6 +410,65 @@ async function pushEventNotifications(
   }
   if (!messages.length) return json({ ok: true, sent: 0, message: "No push_tokens for attendees" });
   // Expo accepts up to 100 messages per request.
+  let sent = 0;
+  for (let i = 0; i < messages.length; i += 100) {
+    const res = await sendExpo(messages.slice(i, i + 100));
+    if (res.status !== 200) return res;
+    sent += Math.min(100, messages.length - i);
+  }
+  return json({ ok: true, sent });
+}
+
+const SYSTEM_TYPES = ["chat_nudge", "match_expiring", "match_expired", "date_feedback"];
+
+async function pushSystemSweep(supabaseUrl: string, serviceKey: string): Promise<Response> {
+  const admin = createClient(supabaseUrl, serviceKey);
+  const since = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+  const { data: rows, error } = await admin
+    .from("notifications")
+    .select("id, user_id, actor_id, type, payload")
+    .in("type", SYSTEM_TYPES)
+    .is("pushed_at", null)
+    .gte("created_at", since)
+    .order("created_at", { ascending: true })
+    .limit(500);
+  if (error) return json({ error: error.message }, 500);
+  const pending = (rows ?? []) as NotificationRow[];
+  if (!pending.length) return json({ ok: true, sent: 0, message: "Nothing to push" });
+
+  const { data: claimed, error: claimError } = await admin
+    .from("notifications")
+    .update({ pushed_at: new Date().toISOString() })
+    .in("id", pending.map((n) => n.id))
+    .is("pushed_at", null)
+    .select("id");
+  if (claimError) return json({ error: claimError.message }, 500);
+  const claimedIds = new Set((claimed ?? []).map((c) => c.id as string));
+  const mine = pending.filter((n) => claimedIds.has(n.id));
+  if (!mine.length) return json({ ok: true, sent: 0, message: "Already pushed" });
+
+  const actorIds = [...new Set(mine.map((n) => n.actor_id).filter((x): x is string => !!x))];
+  const userIds = [...new Set(mine.map((n) => n.user_id))];
+  const [{ data: actors }, { data: tokens, error: tokenError }] = await Promise.all([
+    actorIds.length ? admin.from("profiles").select("id, name").in("id", actorIds) : Promise.resolve({ data: [] as { id: string; name: string }[] }),
+    admin.from("push_tokens").select("user_id, token").in("user_id", userIds),
+  ]);
+  if (tokenError) return json({ error: tokenError.message }, 500);
+  const nameById = new Map((actors ?? []).map((a) => [a.id as string, (a.name as string) || "your match"]));
+  const tokensByUser = new Map<string, string[]>();
+  for (const t of tokens ?? []) {
+    const list = tokensByUser.get(t.user_id as string) ?? [];
+    if (t.token) list.push(t.token as string);
+    tokensByUser.set(t.user_id as string, list);
+  }
+  const messages: ExpoPushMessage[] = [];
+  for (const n of mine) {
+    const { title, body } = describe(n, (n.actor_id && nameById.get(n.actor_id)) || "your match");
+    for (const to of tokensByUser.get(n.user_id) ?? []) {
+      messages.push({ to, title, body, sound: "default", data: { type: n.type, notification_id: n.id, ...(n.payload ?? {}) } });
+    }
+  }
+  if (!messages.length) return json({ ok: true, sent: 0, message: "No push_tokens" });
   let sent = 0;
   for (let i = 0; i < messages.length; i += 100) {
     const res = await sendExpo(messages.slice(i, i + 100));
