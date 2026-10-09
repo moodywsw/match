@@ -189,8 +189,25 @@ export function fallbackPrice(id: EntitlementId): string {
  */
 export function coinPurchaseStatus(): { enabled: boolean; message: string } {
   if (isExpoGo()) return { enabled: false, message: 'Coin packs can be bought in the installed MATCH app.' };
-  if (!apiKey()) return { enabled: false, message: 'Coin packs open as soon as the store is connected.' };
+  if (!apiKey()) return { enabled: false, message: 'Coin packs are coming soon.' };
   return { enabled: true, message: '' };
+}
+
+/**
+ * Which coin packs the store actually sells right now, with localized prices.
+ * `reachable: false` → the store couldn't be asked (Expo Go, no key, offline): show reference
+ * prices and "coming soon". A pack missing from `prices` while reachable isn't live in the store yet.
+ */
+export async function loadCoinStore(productIds: string[]): Promise<{ reachable: boolean; prices: Record<string, string> }> {
+  if (!coinPurchaseStatus().enabled || !productIds.length) return { reachable: false, prices: {} };
+  try {
+    if (!(await Purchases.isConfigured())) return { reachable: false, prices: {} };
+    const category = (Purchases as unknown as { PRODUCT_CATEGORY?: { NON_SUBSCRIPTION?: string } }).PRODUCT_CATEGORY?.NON_SUBSCRIPTION;
+    const products = await Purchases.getProducts(productIds, category as never);
+    return { reachable: true, prices: Object.fromEntries(products.map((p) => [p.identifier, p.priceString])) };
+  } catch {
+    return { reachable: false, prices: {} };
+  }
 }
 
 export async function fetchCoinPrices(productIds: string[]): Promise<Record<string, string>> {

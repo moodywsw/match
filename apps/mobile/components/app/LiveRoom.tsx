@@ -13,6 +13,7 @@ import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { fetchChatList } from '@/lib/chat';
 import {
+  accountAge,
   DEFAULT_QUESTION,
   endLive,
   fetchLiveChat,
@@ -844,7 +845,7 @@ export function GoLiveSheet({
         <>
           <Txt size={13} color={T.text} lh={1.5} style={{ marginTop: -6, marginBottom: 16 }}>
             {blocked.host_block === 'account_too_new'
-              ? `Hosting opens once your account is ${blocked.host_min_days} days old${blocked.host_ready_at ? ` — from ${new Date(blocked.host_ready_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : ''}. It keeps lives safe from throwaway accounts.`
+              ? `Hosting opens once your account is ${accountAge(blocked.host_min_days)} old${blocked.host_ready_at ? ` — from ${new Date(blocked.host_ready_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : ''}. It keeps lives safe from throwaway accounts.`
               : blocked.host_block === 'profile_incomplete'
                 ? `${missingText(blocked.missing)} to go live — hosts need a complete profile so viewers know who they're talking to.`
                 : blocked.host_block === 'incognito_live'

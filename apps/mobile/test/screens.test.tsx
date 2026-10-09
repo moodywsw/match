@@ -7,7 +7,7 @@ import { act, fireEvent } from '@testing-library/react-native';
 import { renderRouter } from 'expo-router/testing-library';
 import path from 'path';
 
-import { authCalls, liveMock, OTHER, rpcCalls, state } from './supabaseMock';
+import { authCalls, liveMock, OTHER, rpcCalls, state, walletMock } from './supabaseMock';
 
 const APP_DIR = path.resolve(__dirname, '../app');
 
@@ -334,16 +334,111 @@ describe('wallet + gifts (Expo Go runtime)', () => {
     }
   }
 
-  test('wallet shows balance, disabled packs and no cash-out', async () => {
+  test('wallet screen: balance, priced packs, history, earn coins and no cash-out', async () => {
+    walletMock.reset();
     const view = await open('/profile');
+    await settle();
     await act(async () => {
-      fireEvent.press(view.getByText('Wallet · MATCH coins'));
+      fireEvent.press(view.getByText('Wallet · 42 coins'));
     });
     await settle();
-    expect(view.getByText('42')).toBeTruthy();
+    expect(view.getByLabelText('Balance 42 coins')).toBeTruthy();
     expect(view.getByText('1,200 coins')).toBeTruthy();
-    expect(view.getByText(/Coin packs (can be bought in the installed MATCH app|open as soon as the store is connected)/)).toBeTruthy();
-    expect(view.getByText(/payouts coming soon/)).toBeTruthy();
+    expect(view.getByText('€9.99')).toBeTruthy();
+    expect(view.getByText('+20% bonus · best value')).toBeTruthy();
+    expect(view.getAllByText(/^(Coming soon|In the MATCH app)$/).length).toBe(3);
+    expect(view.getByText('Sent Flame')).toBeTruthy();
+    expect(view.getByText(/to Bruno · live/)).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(view.getByText('Purchases'));
+    });
+    expect(view.queryByText('Sent Flame')).toBeNull();
+    expect(view.getByText('100 coin pack')).toBeTruthy();
+    expect(view.getByText(/can’t be exchanged for cash/)).toBeTruthy();
+    expect(view.queryByText(/payouts/i)).toBeNull();
+    expect(view.queryByText(/test coins/)).toBeNull();
+    expect(errors).toEqual([]);
+  });
+
+  test('wallet: admin sees test coins; invite code can be shared and a friend code redeemed', async () => {
+    walletMock.reset();
+    walletMock.admin = true;
+    rpcCalls.length = 0;
+    const view = await open('/wallet');
+    await settle();
+    expect(view.getByText('🛠️ Add 500 test coins (admin only)')).toBeTruthy();
+    expect(view.getByText('K7QX2M')).toBeTruthy();
+    expect(view.getByText(/2 joined · 1 rewarded/)).toBeTruthy();
+    await act(async () => {
+      fireEvent.changeText(view.getByPlaceholderText("Got a friend's code?"), 'ab-cd12');
+    });
+    await act(async () => {
+      fireEvent.press(view.getByLabelText('Use invite code'));
+    });
+    await settle();
+    expect(rpcCalls.find((c) => c.fn === 'redeem_referral')?.args).toEqual({ p_code: 'ABCD12' });
+    expect(view.getByText(/Code saved. Add .* and you and Bruno both get 50 coins/)).toBeTruthy();
+    walletMock.reset();
+    expect(errors).toEqual([]);
+  });
+
+  test('home: daily streak claim + completeness nudge', async () => {
+    walletMock.reset();
+    rpcCalls.length = 0;
+    const view = await open('/home');
+    await settle();
+    expect(view.getByText('Day 3 streak — your daily coins are ready')).toBeTruthy();
+    expect(view.getByText('Answer the Friday question')).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(view.getByLabelText('Claim 5 coins, day 3 streak'));
+    });
+    await settle();
+    expect(rpcCalls.some((c) => c.fn === 'claim_daily_reward')).toBe(true);
+    expect(view.getByText('+5 coins · day 3 streak 🔥')).toBeTruthy();
+    walletMock.reset();
+    expect(errors).toEqual([]);
+  });
+
+  test('profile shows the strength meter with the next step', async () => {
+    const view = await open('/profile');
+    await settle();
+    expect(view.getByText('Profile strength')).toBeTruthy();
+    expect(view.getByText('65%')).toBeTruthy();
+    expect(view.getByText('The best conversation starter on MATCH')).toBeTruthy();
+    expect(view.getByText('Invite friends · you both get coins')).toBeTruthy();
+    expect(errors).toEqual([]);
+  });
+
+  test('live tab has a coin pill that opens the wallet', async () => {
+    const view = await open('/live');
+    await settle();
+    await act(async () => {
+      fireEvent.press(view.getByLabelText('Wallet, 42 coins'));
+    });
+    await settle();
+    expect(view.getByText('TOP UP')).toBeTruthy();
+    expect(errors).toEqual([]);
+  });
+
+  test('discover: no MATCH+ boost left → boost with coins, low balance → top up', async () => {
+    const view = await open('/discover');
+    await settle();
+    await act(async () => {
+      fireEvent.press(view.getByText('Explore more'));
+    });
+    await settle();
+    await act(async () => {
+      fireEvent.press(view.getByText('Boost'));
+    });
+    await settle();
+    expect(view.getByText('Boost your profile')).toBeTruthy();
+    expect(view.getByText('150 coins')).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(view.getByText('Top up · need 108 more'));
+    });
+    await settle();
+    expect(view.getByText('TOP UP')).toBeTruthy();
+    expect(view.getByText(/108 more coins/)).toBeTruthy();
     expect(errors).toEqual([]);
   });
 
@@ -360,6 +455,17 @@ describe('wallet + gifts (Expo Go runtime)', () => {
     expect(view.getByText('Send Bruno a gift')).toBeTruthy();
     expect(view.getByText('Crown')).toBeTruthy();
     expect(view.getByText('42 coins')).toBeTruthy();
+    expect(view.getByLabelText('Top up coins')).toBeTruthy();
+    // low balance: Crown costs 999 → the button turns into a top-up with the exact shortfall
+    await act(async () => {
+      fireEvent.press(view.getByLabelText('Crown, 999 coins'));
+    });
+    expect(view.getByText(/Low balance: you have 42 coins and this costs 999/)).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(view.getByText('Top up · need 957 more'));
+    });
+    await settle();
+    expect(view.getByText(/957 more coins/)).toBeTruthy();
     expect(errors).toEqual([]);
   });
 });

@@ -1,7 +1,7 @@
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Alert, Pressable, ScrollView, View } from 'react-native';
-import { Radio, Users } from 'lucide-react-native';
+import { Coins, Radio, Users } from 'lucide-react-native';
 
 import { RoomTypeBadge } from '@/components/app/LiveDating';
 import { GoLiveSheet, LiveRoomView } from '@/components/app/LiveRoom';
@@ -10,9 +10,11 @@ import { DarkPill, FadeUp, LiveBadge, Photo } from '@/components/ui/primitives';
 import { Txt } from '@/components/ui/Txt';
 import { T } from '@/constants/theme';
 import { useApp } from '@/contexts/AppContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { useLiveRooms } from '@/hooks/useLiveRooms';
 import { fetchLiveEligibility, liveErrorMessage, startLive, type LiveEligibility } from '@/lib/live';
 import { LIVE_CAT_LABEL, LIVE_CATS, type LiveRoom } from '@/lib/mock';
+import { fetchWallet, fmtCoins } from '@/lib/wallet';
 
 export default function LiveTab() {
   const { me } = useApp();
@@ -23,20 +25,41 @@ export default function LiveTab() {
   const { rooms: filtered, reload } = useLiveRooms(cat);
   const router = useRouter();
   const [elig, setElig] = useState<LiveEligibility | null>(null);
+  const { user } = useAuth();
+  const [coins, setCoins] = useState<number | null>(null);
   useFocusEffect(
     useCallback(() => {
       fetchLiveEligibility()
         .then(setElig)
         .catch(() => setElig(null));
-    }, [])
+      if (user?.id)
+        fetchWallet(user.id)
+          .then((w) => setCoins(w.coins))
+          .catch(() => {});
+    }, [user?.id])
   );
 
   return (
     <Screen>
       <FadeUp>
-        <Txt v="display" size={22} style={{ marginBottom: 4 }}>
-          Live
-        </Txt>
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+          <Txt v="display" size={22} style={{ flex: 1 }}>
+            Live
+          </Txt>
+          <Pressable
+            onPress={() => router.push('/wallet')}
+            accessibilityRole="button"
+            accessibilityLabel={`Wallet, ${coins ?? 0} coins`}
+            style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 6, paddingHorizontal: 12, borderRadius: 999, backgroundColor: `${T.amber}1F`, borderWidth: 1, borderColor: `${T.amber}55`, opacity: pressed ? 0.8 : 1 })}>
+            <Coins size={14} color={T.amber} />
+            <Txt v="mono" w={600} size={12.5} color={T.amber}>
+              {coins == null ? '—' : fmtCoins(coins)}
+            </Txt>
+            <Txt w={700} size={12} color={T.amber}>
+              +
+            </Txt>
+          </Pressable>
+        </View>
         <Txt size={13} color={T.muted} style={{ marginBottom: 14 }}>
           Jump into a room, or start your own.
         </Txt>

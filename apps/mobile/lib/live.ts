@@ -190,6 +190,11 @@ const MISSING_LABEL: Record<string, string> = {
 };
 
 /** "Add a photo, a short bio and 3 interests" */
+/** "a day" / "3 days" — used in hosting rules copy. */
+export function accountAge(days: number): string {
+  return days === 1 ? 'a day' : `${days} days`;
+}
+
 export function missingText(missing: string[] | null | undefined): string {
   const items = (missing || []).map((m) => MISSING_LABEL[m] || m);
   if (!items.length) return '';
@@ -203,7 +208,7 @@ export function hostBlockText(e: LiveEligibility | null): string | null {
     case 'account_too_new': {
       const d = e.host_ready_at ? new Date(e.host_ready_at) : null;
       const when = d ? d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : 'soon';
-      return `Hosting opens once your account is ${e.host_min_days} days old — you can go live from ${when}. Watching and chatting work now.`;
+      return `Hosting opens once your account is ${accountAge(e.host_min_days)} old — you can go live from ${when}. Watching and chatting work now.`;
     }
     case 'profile_incomplete':
       return `${missingText(e.missing)} to go live — hosts need a complete profile.`;
@@ -363,7 +368,7 @@ export function liveErrorMessage(err: unknown): string {
     const what = detail ? missingText(detail.split(',')) : 'Complete your profile';
     return `${what} to join in — watching is always open`;
   }
-  if (msg.includes('account_too_new')) return 'Hosting opens once your account is 7 days old';
+  if (msg.includes('account_too_new')) return 'Hosting opens once your account is a day old';
   if (msg.includes('incognito_live')) return 'Turn off incognito to go live or join the stage';
   if (msg.includes('removed_from_live')) return 'The host removed you from this live';
   if (msg.includes('muted_in_live')) return 'The host muted you in this live';

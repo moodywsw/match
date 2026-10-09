@@ -24,7 +24,7 @@ begin
     (h, 'Helena'), (v, 'Vasco'), (w, 'Wanda'), (n1, 'Nuno'), (d1, 'Dina'), (d2, 'Diogo'), (d3, 'Daniela'), (d4, 'Dário'),
     (x, 'Xavier'), (ad, 'Admin'), (inc, 'Ines')) p(u, nm);
   update public.profiles set bio = null where id = w;                                        -- incomplete
-  update public.profiles set created_at = now() - interval '2 days' where id in (n1, ad);   -- too new
+  update public.profiles set created_at = now() - interval '6 hours' where id in (n1, ad);   -- too new (< 1 day)
   update public.profiles set is_admin = true where id = ad;
   insert into public.photos (user_id, url, position, is_primary)
   select u, 'https://t.supabase.co/storage/v1/object/public/profile-photos/' || u || '/1.jpg', 0, true

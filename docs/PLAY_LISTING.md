@@ -35,7 +35,7 @@ LIVE, BUILT FOR DATING
 • Speed dating rooms: 3–4 people, 3-minute rounds, run by the host.
 • Question of the night: answer live and see who answers like you.
 • Like the host from the live screen. If it's mutual, it's a match.
-• Anyone can watch. To comment, send gifts or host you need a complete profile, and hosts must have an account at least 7 days old.
+• Anyone can watch. To comment, send gifts or host you need a complete profile, and hosts must have an account at least a day old.
 
 MEET IN REAL LIFE
 • Events near you: join, RSVP and meet people in person.
@@ -54,7 +54,7 @@ FREE TO USE, WITH OPTIONAL UPGRADES
 MATCH is free: create a profile, like, match, chat, join events and watch lives.
 • MATCH+: unlimited likes, see who liked you, rewind, more super likes and a monthly boost.
 • SUPER MATCH: everything in MATCH+, plus incognito, see who viewed you, unlimited super likes and message priority.
-Subscriptions renew automatically until cancelled in Google Play. MATCH coins are optional and are only used for gifts in lives.
+Subscriptions renew automatically until cancelled in Google Play. MATCH coins are optional: use them for gifts in lives or to boost your profile. Earn free coins with your daily streak and by inviting friends.
 
 Terms: [TERMS_URL]
 Privacy: [PRIVACY_URL]
@@ -85,7 +85,7 @@ LIVE, PENSADO PARA ENCONTROS
 • Salas de speed dating: 3–4 pessoas, rondas de 3 minutos, conduzidas pelo anfitrião.
 • Pergunta da noite: responde em direto e descobre quem pensa como tu.
 • Dá like ao anfitrião a partir do live. Se for mútuo, é match.
-• Qualquer pessoa pode assistir. Para comentar, enviar presentes ou fazer um live precisas de um perfil completo, e só contas com pelo menos 7 dias podem ser anfitriãs.
+• Qualquer pessoa pode assistir. Para comentar, enviar presentes ou fazer um live precisas de um perfil completo, e só contas com pelo menos um dia podem ser anfitriãs.
 
 CONHECER AO VIVO
 • Eventos perto de ti: inscreve-te e conhece pessoas pessoalmente.
@@ -104,7 +104,7 @@ GRÁTIS, COM UPGRADES OPCIONAIS
 O MATCH é grátis: cria o perfil, dá likes, faz match, conversa, vai a eventos e assiste a lives.
 • MATCH+: likes ilimitados, vê quem gostou de ti, rewind, mais super likes e um boost por mês.
 • SUPER MATCH: tudo do MATCH+, mais modo incógnito, quem visitou o teu perfil, super likes ilimitados e prioridade nas mensagens.
-As subscrições renovam automaticamente até as cancelares no Google Play. As moedas MATCH são opcionais e servem apenas para presentes nos lives.
+As subscrições renovam automaticamente até as cancelares no Google Play. As moedas MATCH são opcionais: servem para presentes nos lives ou para dar boost ao teu perfil. Ganha moedas grátis com a sequência diária e convidando amigos.
 
 Termos: [TERMS_URL]
 Privacidade: [PRIVACY_URL]

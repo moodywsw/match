@@ -1,11 +1,11 @@
 import { useFocusEffect, useRouter } from 'expo-router';
-import { Camera, ChevronRight, Coins, Crown, LogOut, Pencil, Plus, Settings, Sparkles, Star } from 'lucide-react-native';
+import { Camera, ChevronRight, Coins, Crown, Gift, LogOut, Pencil, Plus, Settings, Sparkles, Star } from 'lucide-react-native';
 import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Image, Pressable, ScrollView, View } from 'react-native';
 
 import { FridayCard } from '@/components/app/FridayCard';
 import { EditProfileSheet, ProfileGradientButton, SettingsSheet } from '@/components/app/ProfileSheets';
-import { WalletSheet } from '@/components/app/WalletSheet';
+import { CompletenessCard } from '@/components/app/Wallet';
 import { Screen } from '@/components/app/Screen';
 import { Avatar, Chip, FadeUp, MatchRing, SafetyLink, SectionTitle, StatCard, Tag, VerifiedIcon } from '@/components/ui/primitives';
 import { Txt } from '@/components/ui/Txt';
@@ -16,6 +16,7 @@ import { useChats } from '@/hooks/useChats';
 import { intentionLabel } from '@/lib/mock';
 import { fetchMyPhotos, pickAndUploadProfilePhoto, setPrimaryPhoto, type PhotoRow } from '@/lib/photos';
 import { friendlyError, isCancelled } from '@/lib/errors';
+import { fetchWallet, fmtCoins } from '@/lib/wallet';
 
 const BADGE_RULES: [RegExp, string][] = [
   [/travel|hik|beach/i, 'Travel Addict'],
@@ -34,7 +35,7 @@ export default function ProfileTab() {
   const [uploading, setUploading] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
-  const [showWallet, setShowWallet] = useState(false);
+  const [coins, setCoins] = useState<number | null>(null);
   const [localVerified, setLocalVerified] = useState(false);
 
   const loadPhotos = useCallback(async () => {
@@ -49,7 +50,11 @@ export default function ProfileTab() {
   useFocusEffect(
     useCallback(() => {
       void loadPhotos();
-    }, [loadPhotos])
+      if (user?.id)
+        fetchWallet(user.id)
+          .then((w) => setCoins(w.coins))
+          .catch(() => {});
+    }, [loadPhotos, user?.id])
   );
 
   const upload = async () => {
@@ -85,11 +90,6 @@ export default function ProfileTab() {
     if (!top.length) return 0;
     return Math.round(top.reduce((s, p) => s + p.match, 0) / top.length);
   }, [people]);
-
-  const completeness = useMemo(() => {
-    const checks = [!!profile?.name, !!profile?.birth_date, !!profile?.city, !!profile?.bio, !!profile?.intention, photos.length > 0, interests.length >= 3, verified];
-    return Math.round((checks.filter(Boolean).length / checks.length) * 100);
-  }, [profile, photos.length, interests.length, verified]);
 
   const badges = useMemo(() => {
     const out = new Set<string>();
@@ -145,6 +145,8 @@ export default function ProfileTab() {
           </Pressable>
         </View>
 
+        <CompletenessCard onFix={(item) => (item.key === 'photo' || item.key === 'photos3' ? void upload() : setShowEdit(true))} />
+
         <FridayCard answer={profile?.friday_answer} onEdit={() => setShowEdit(true)} style={{ marginBottom: 18 }} />
 
         <SectionTitle title="Your photos" sub="Tap a photo to make it your main one" />
@@ -180,7 +182,7 @@ export default function ProfileTab() {
         </View>
 
         <View style={{ flexDirection: 'row', gap: 10, marginBottom: 22 }}>
-          <StatCard value={`${completeness}%`} sub="Profile complete" />
+          <StatCard value={coins == null ? '—' : fmtCoins(coins)} sub="Coins" />
           <StatCard value={String(realMatches)} sub="Matches" />
           <StatCard value={String(likedIds.size)} sub="Likes sent" />
         </View>
@@ -214,7 +216,13 @@ export default function ProfileTab() {
           <Sparkles size={18} color="#fff" />
         </ProfileGradientButton>
 
-        <SafetyLink icon={<Coins size={16} color={T.amber} />} label="Wallet · MATCH coins" onPress={() => setShowWallet(true)} trailing={<ChevronRight size={15} color={T.mutedDim} />} />
+        <SafetyLink
+          icon={<Coins size={16} color={T.amber} />}
+          label={coins == null ? 'Wallet · MATCH coins' : `Wallet · ${fmtCoins(coins)} coins`}
+          onPress={() => router.push('/wallet')}
+          trailing={<ChevronRight size={15} color={T.mutedDim} />}
+        />
+        <SafetyLink icon={<Gift size={16} color={T.rose} />} label="Invite friends · you both get coins" onPress={() => router.push('/wallet')} trailing={<ChevronRight size={15} color={T.mutedDim} />} />
         <SafetyLink icon={<Sparkles size={16} color={T.text} />} label="View your social posts" onPress={() => router.navigate('/(tabs)/social')} trailing={<ChevronRight size={15} color={T.mutedDim} />} />
         <SafetyLink icon={<Settings size={16} color={T.text} />} label="Settings & privacy" onPress={() => setShowSettings(true)} trailing={<ChevronRight size={15} color={T.mutedDim} />} />
         <SafetyLink icon={<LogOut size={16} color={T.rose} />} label="Sign out" color={T.rose} onPress={() => void signOut()} />
@@ -231,7 +239,6 @@ export default function ProfileTab() {
         }}
       />
       <EditProfileSheet visible={showEdit} onClose={() => setShowEdit(false)} />
-      <WalletSheet visible={showWallet} onClose={() => setShowWallet(false)} />
     </Screen>
   );
 }

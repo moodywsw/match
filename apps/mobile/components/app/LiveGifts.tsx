@@ -145,7 +145,8 @@ export function GiftSheet({
       onSent({ id: r.eventId, gift: pick, sender: 'You', quantity: qty });
       onClose();
     } catch (e) {
-      toast(giftErrorMessage(e));
+      if (String((e as { message?: string })?.message ?? '').includes('insufficient_coins')) setWallet(true);
+      else toast(giftErrorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -154,17 +155,23 @@ export function GiftSheet({
   return (
     <>
       <Sheet visible={visible && !wallet} onClose={onClose} scrim={T.scrimDeep} title={`Send ${hostName} a gift`} icon={<Txt size={18}>🎁</Txt>}>
-        <Pressable onPress={() => real && setWallet(true)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: -8, marginBottom: 14 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: -8, marginBottom: 14 }}>
           <Coins size={14} color={T.amber} />
-          <Txt size={12.5} color={T.amber} w={600}>
+          <Txt size={12.5} color={T.amber} w={600} style={{ flex: 1 }}>
             {real ? (coins == null ? '…' : `${fmtCoins(coins)} coins`) : 'Preview room'}
           </Txt>
           {real ? (
-            <Txt size={12.5} color={T.muted}>
-              · Top up
-            </Txt>
+            <Pressable
+              onPress={() => setWallet(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Top up coins"
+              style={({ pressed }) => ({ paddingVertical: 6, paddingHorizontal: 12, borderRadius: 999, backgroundColor: `${T.amber}22`, borderWidth: 1, borderColor: `${T.amber}66`, opacity: pressed ? 0.8 : 1 })}>
+              <Txt w={700} size={12} color={T.amber}>
+                + Top up
+              </Txt>
+            </Pressable>
           ) : null}
-        </Pressable>
+        </View>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
           {gifts.map((g) => {
             const on = pick?.id === g.id;
@@ -174,6 +181,7 @@ export function GiftSheet({
                 onPress={() => setPick(g)}
                 accessibilityLabel={`${g.name}, ${g.coin_price} coins`}
                 style={{
+                  opacity: real && coins != null && g.coin_price > coins && !on ? 0.5 : 1,
                   width: '31%',
                   alignItems: 'center',
                   paddingVertical: 12,
@@ -201,14 +209,19 @@ export function GiftSheet({
             <Chip key={n} label={`×${n}`} active={qty === n} onPress={() => setQty(n)} small />
           ))}
         </View>
+        {short ? (
+          <Txt size={12} color={T.amber} style={{ marginBottom: 10 }}>
+            Low balance: you have {fmtCoins(coins ?? 0)} coins and this costs {fmtCoins(cost)}.
+          </Txt>
+        ) : null}
         <PrimaryButton
-          label={!pick ? 'Pick a gift' : short ? `Need ${fmtCoins(cost - (coins ?? 0))} more coins` : `Send ${pick.emoji} ×${qty} · ${fmtCoins(cost)} coins`}
+          label={!pick ? 'Pick a gift' : short ? `Top up · need ${fmtCoins(cost - (coins ?? 0))} more` : `Send ${pick.emoji} ×${qty} · ${fmtCoins(cost)} coins`}
           disabled={!pick}
           loading={busy}
           onPress={send}
         />
       </Sheet>
-      <WalletSheet visible={wallet} onClose={() => setWallet(false)} />
+      <WalletSheet visible={wallet} onClose={() => setWallet(false)} need={short ? cost : undefined} />
     </>
   );
 }

@@ -1,9 +1,11 @@
 import { LinearGradient } from 'expo-linear-gradient';
+import { useRouter } from 'expo-router';
 import { Camera, Compass, Heart, MapPin, MoreHorizontal, RotateCcw, Sparkles, SlidersHorizontal, Star, X, Zap } from 'lucide-react-native';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Dimensions, PanResponder, Pressable, ScrollView, View } from 'react-native';
 
 import { useBarInsets } from '@/components/app/Bars';
+import { BoostCoinsSheet } from '@/components/app/Wallet';
 import { CompatibilitySheet, DEFAULT_FILTERS, FiltersSheet, MapView, SafetySheet, type Filters } from '@/components/app/DiscoverParts';
 import { DemoTag, FadeUp, MatchRing, Photo, PrimaryButton, RoundBtn, Tag, VerifiedIcon } from '@/components/ui/primitives';
 import { Txt } from '@/components/ui/Txt';
@@ -51,7 +53,7 @@ function pinPriority(list: Person[], rewoundId: string | null) {
 }
 
 function useBoost() {
-  const { tier, requirePremium, toast } = useApp();
+  const { tier, toast } = useApp();
   const [activeUntil, setActiveUntil] = useState<number | null>(null);
   const [left, setLeft] = useState({ used: 0, quota: 0 });
   const [now, setNow] = useState(Date.now());
@@ -75,12 +77,17 @@ function useBoost() {
   }, [active]);
   const remaining = active ? Math.max(0, Math.round((activeUntil! - now) / 1000)) : 0;
   const label = active ? `${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, '0')}` : 'Boost';
+  const [coinSheet, setCoinSheet] = useState(false);
   const start = async () => {
     if (active) {
       toast(`You're boosted — top of Discover for ${Math.ceil(remaining / 60)} more min`);
       return;
     }
-    if (!requirePremium('match_plus', 'Boost is part of MATCH+ (1 per month)')) return;
+    // No MATCH+ boost left this month (or free plan) → offer a boost with coins instead.
+    if (left.quota - left.used <= 0) {
+      setCoinSheet(true);
+      return;
+    }
     try {
       const ends = await activateBoost();
       setActiveUntil(new Date(ends).getTime());
@@ -89,13 +96,18 @@ function useBoost() {
       void refresh();
     } catch (err) {
       const code = perkErrorCode(err);
-      if (code === 'boost_quota') toast('Monthly boost already used — next one on the 1st');
+      if (code === 'boost_quota' || code === 'premium_required') setCoinSheet(true);
       else if (code === 'boost_active') toast('A boost is already running');
-      else if (code === 'premium_required') requirePremium('match_plus', 'Boost is part of MATCH+');
       else toast(code);
     }
   };
-  return { active, label, start, available: left.quota - left.used };
+  const onCoinBoost = (endsAt: string) => {
+    setActiveUntil(new Date(endsAt).getTime());
+    setNow(Date.now());
+    toast('⚡ Boost on — you’re near the top of Discover');
+    void refresh();
+  };
+  return { active, label, start, available: left.quota - left.used, coinSheet, setCoinSheet, onCoinBoost, hasPlanBoost: tier !== 'free' };
 }
 
 type PicksState = { loading: boolean; error: string | null; refreshesAt: string | null; quota: number; people: Person[]; actedIds: Set<string> };
@@ -158,6 +170,8 @@ export default function DiscoverTab() {
   const { people, likedIds, passedIds, like, pass, me, resetDeck, removePerson, toast, tier, setDeckFilters, rewind, rewoundId } = useApp();
   const plus = tier !== 'free';
   const boost = useBoost();
+  const router = useRouter();
+  const { openPremium } = useApp();
   const [mode, setMode] = useState('Recommended');
   const [view, setView] = useState<'cards' | 'map'>('cards');
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
@@ -471,6 +485,20 @@ export default function DiscoverTab() {
       </FadeUp>
 
       <CompatibilitySheet profile={detail} onClose={() => setDetail(null)} />
+      <BoostCoinsSheet
+        visible={boost.coinSheet}
+        onClose={() => boost.setCoinSheet(false)}
+        onBoosted={boost.onCoinBoost}
+        hasPlanBoost={boost.hasPlanBoost}
+        onPremium={() => {
+          boost.setCoinSheet(false);
+          openPremium();
+        }}
+        onTopUp={(need) => {
+          boost.setCoinSheet(false);
+          router.push({ pathname: '/wallet', params: { need: String(need) } });
+        }}
+      />
       <FiltersSheet
         visible={showFilters}
         filters={filters}

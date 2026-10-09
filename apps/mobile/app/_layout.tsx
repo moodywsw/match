@@ -127,6 +127,7 @@ export default function RootLayout() {
                 <Stack.Screen name="story/[storyId]" options={{ animation: 'slide_from_right' }} />
                 <Stack.Screen name="legal/privacy" options={{ animation: 'slide_from_bottom' }} />
                 <Stack.Screen name="legal/terms" options={{ animation: 'slide_from_bottom' }} />
+                <Stack.Screen name="wallet" options={{ animation: 'slide_from_right' }} />
                 <Stack.Screen name="reset-password" options={{ animation: 'fade', gestureEnabled: false }} />
                 <Stack.Screen name="+not-found" />
               </Stack>

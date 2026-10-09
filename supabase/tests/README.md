@@ -30,7 +30,8 @@ failing assertion (the message names it).
 | `calls.sql` | `CALL_TESTS_PASSED:` | 1:1 calls: accept/end, missed, decline, expiry, blocks, rate limit |
 | `differentiators.sql` | `DIFF_TESTS_PASSED:` | daily picks, nudges, expiring chats + extend, we-met + feedback, trust |
 | `wallet_gifts.sql` | `WALLET_TESTS_PASSED:` | wallet lockdown, credits, gifts + rate limit, reversals, admin |
-| `live_dating.sql` | `LIVE_TESTS_PASSED:` | LIVE for dating: watch vs interact gating (complete profile / verified-photo switch), hosting rules (7-day account age, incognito), like-from-live → match (daily limits, blocks, incognito), no DMs without a match for viewers, host moderation (remove/mute/comments off/pin), speed-dating rounds, question of the night |
+| `wallet_growth.sql` | `WALLET_GROWTH_PASSED:` | 1-day hosting rule, lockdown of new tables, daily streak (once per Lisbon day, day-7 bonus, reset after a missed day), referrals (own/invalid/duplicate/circular/redeem window, pay-on-complete via triggers, inviter notified), completeness score, coin boosts (balance, one at a time, hidden profiles, separate from MATCH+ quota), wallet overview + readable history |
+| `live_dating.sql` | `LIVE_TESTS_PASSED:` | LIVE for dating: watch vs interact gating (complete profile / verified-photo switch), hosting rules (1-day account age, incognito), like-from-live → match (daily limits, blocks, incognito), no DMs without a match for viewers, host moderation (remove/mute/comments off/pin), speed-dating rounds, question of the night |
 
 Run them all:
 
@@ -39,5 +40,5 @@ for f in supabase/tests/*.sql; do psql "$DATABASE_URL" -f "$f"; done
 ```
 
 Several suites first make their throwaway users "live-eligible" (bio, intention,
-photo, 3 interests, account older than 7 days) because commenting, gifting and
+photo, 3 interests, account older than 1 day) because commenting, gifting and
 hosting in LIVE are gated server-side.

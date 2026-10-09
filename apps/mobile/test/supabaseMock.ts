@@ -98,6 +98,11 @@ const fixtures: Record<string, () => unknown[]> = {
     { product_id: 'coins_1200', coins: 1200, sort: 3 },
   ],
   'table:wallets': () => [{ coins: 42, diamonds: 7 }],
+  'rpc:get_wallet_history': () => [
+    { id: 't3', currency: 'coins', amount: -25, balance_after: 42, kind: 'gift_sent', title: 'Sent Flame', subtitle: 'to Bruno · live', emoji: '🔥', created_at: NOW },
+    { id: 't2', currency: 'coins', amount: 5, balance_after: 67, kind: 'reward', title: 'Daily streak · day 2', subtitle: null, emoji: '🔥', created_at: NOW },
+    { id: 't1', currency: 'coins', amount: 62, balance_after: 62, kind: 'purchase', title: '100 coin pack', subtitle: 'Store purchase', emoji: '🪙', created_at: NOW },
+  ],
   // chats that don't die: the match with OTHER went quiet and is expiring
   'table:match_lifecycle': () => [
     { match_id: 'mt1', user_a: ME, user_b: OTHER, state: 'expiring', matched_at: '2026-10-01T12:00:00Z', last_message_at: null, expires_at: new Date(Date.now() + 30 * 3600_000).toISOString(), extended_a_at: null, extended_b_at: null, video_suggested_at: null, nudged_at: '2026-10-02T12:00:00Z' },
@@ -122,6 +127,50 @@ const scalarFixtures: Record<string, () => unknown> = {
   'rpc:mark_we_met': () => ({ me: true, them: false, notified: true }),
   'rpc:get_live_eligibility': () => liveMock.elig ?? ELIGIBLE,
   'rpc:like_from_live': () => ({ liked: true, matched: true, match_id: 'mt1', conversation_id: OTHER, name: 'Bruno' }),
+  // wallet + growth
+  'rpc:get_wallet_overview': () => ({
+    coins: 42,
+    diamonds: 7,
+    is_admin: walletMock.admin,
+    boost_coin_price: 150,
+    boost_minutes: 30,
+    packs: [
+      { product_id: 'coins_100', coins: 100, reference_price: '€0.99', bonus_pct: 0 },
+      { product_id: 'coins_550', coins: 550, reference_price: '€4.99', bonus_pct: 10 },
+      { product_id: 'coins_1200', coins: 1200, reference_price: '€9.99', bonus_pct: 20 },
+    ],
+  }),
+  'rpc:get_daily_reward': () => ({ claimed_today: walletMock.claimed, streak: walletMock.claimed ? 3 : 2, day_in_week: 3, today_coins: 5, tomorrow_coins: 5, schedule: [5, 5, 5, 5, 5, 5, 25], eligible: true }),
+  'rpc:claim_daily_reward': () => {
+    walletMock.claimed = true;
+    return { claimed: true, coins: 5, balance: 47, claimed_today: true, streak: 3, day_in_week: 3, today_coins: 5, tomorrow_coins: 5, schedule: [5, 5, 5, 5, 5, 5, 25], eligible: true };
+  },
+  'rpc:get_my_referral': () => ({ code: 'K7QX2M', coins: 50, invited: 2, rewarded: 1, max_rewards: 20, can_redeem: true, redeemed: null }),
+  'rpc:redeem_referral': () => ({ ok: true, rewarded: false, coins: 50, referrer_name: 'Bruno', missing: ['photo'] }),
+  'rpc:get_profile_completeness': () => ({
+    score: 65,
+    live_ready: true,
+    items: [
+      { key: 'photo', label: 'Add a profile photo', weight: 25, done: true, hint: '' },
+      { key: 'bio', label: 'Write a short bio', weight: 15, done: true, hint: '' },
+      { key: 'interests', label: 'Pick 3+ interests', weight: 15, done: true, hint: '' },
+      { key: 'friday', label: 'Answer the Friday question', weight: 15, done: false, hint: 'The best conversation starter on MATCH' },
+      { key: 'intention', label: "Say what you're looking for", weight: 10, done: true, hint: '' },
+      { key: 'photos3', label: 'Add 3 or more photos', weight: 10, done: false, hint: '' },
+      { key: 'city', label: 'Add your city', weight: 10, done: false, hint: '' },
+    ],
+  }),
+  'rpc:activate_boost_with_coins': () => ({ ends_at: new Date(Date.now() + 1800_000).toISOString(), balance: 0, price: 150 }),
+};
+
+/** Mutable wallet fixtures. */
+export const walletMock = {
+  admin: false,
+  claimed: false,
+  reset() {
+    this.admin = false;
+    this.claimed = false;
+  },
 };
 
 /** Every rpc() call the app made (name + args). */

@@ -23,7 +23,7 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
  *    event whose actor_id is the caller (the event creator) to each attendee.
  *
  * System sweep — body `{ "system_sweep": true }` (pg_cron, anon or service JWT):
- *    pushes un-pushed system rows (chat_nudge, match_expiring, match_expired, date_feedback;
+ *    pushes un-pushed system rows (chat_nudge, match_expiring, match_expired, date_feedback, reward;
  *    ≤ 30 min old) written by the lifecycle cron. Nothing in the request controls who
  *    is notified or what it says, so the public anon JWT is enough; each row is claimed once.
  *
@@ -312,6 +312,10 @@ function describe(n: NotificationRow, actorName: string): { title: string; body:
       return { title: `${actorName} says you met 💛`, body: "Did you? Confirm and share private feedback — only MATCH sees it" };
     case "date_feedback":
       return { title: `How was your date with ${actorName}?`, body: "Private feedback keeps MATCH safe — it takes 20 seconds" };
+    case "reward": {
+      const coins = typeof n.payload?.coins === "number" ? (n.payload.coins as number) : 50;
+      return { title: "🪙 Invite bonus", body: `${actorName} joined with your invite — +${coins} coins for you both` };
+    }
     default:
       return { title: "MATCH", body: "You have a new notification" };
   }
@@ -451,7 +455,7 @@ async function pushEventNotifications(
   return json({ ok: true, sent });
 }
 
-const SYSTEM_TYPES = ["chat_nudge", "match_expiring", "match_expired", "date_feedback"];
+const SYSTEM_TYPES = ["chat_nudge", "match_expiring", "match_expired", "date_feedback", "reward"];
 
 async function pushSystemSweep(supabaseUrl: string, serviceKey: string): Promise<Response> {
   const admin = createClient(supabaseUrl, serviceKey);

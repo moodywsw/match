@@ -55,7 +55,7 @@ begin
   log := log || ' credit';
 
   -- Live gift: a gifts host b
-  -- live needs a complete profile (+ 7-day-old account to host): make these users eligible
+  -- live needs a complete profile (+ account older than the host minimum): make these users eligible
   update public.profiles set bio = coalesce(bio, 'Hello there'), intention = coalesce(intention, 'serious'),
          created_at = now() - interval '30 days' where id = any(array[a, b]);
   insert into public.photos (user_id, url, position, is_primary)

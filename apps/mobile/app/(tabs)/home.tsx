@@ -5,6 +5,7 @@ import { Image, Pressable, ScrollView, View } from 'react-native';
 
 import { LiveRoomView } from '@/components/app/LiveRoom';
 import { Screen } from '@/components/app/Screen';
+import { CompletenessNudge, DailyRewardCard } from '@/components/app/Wallet';
 import { Chip, DarkPill, FadeUp, LiveBadge, Photo, SectionTitle } from '@/components/ui/primitives';
 import { Txt } from '@/components/ui/Txt';
 import { T } from '@/constants/theme';
@@ -41,6 +42,9 @@ export default function HomeTab() {
         <Txt size={13.5} color={T.muted} style={{ marginBottom: 20 }}>
           Here's who matches your vibe today.
         </Txt>
+
+        <DailyRewardCard compact />
+        <CompletenessNudge onPress={() => router.navigate('/(tabs)/profile')} />
 
         <SectionTitle title="Your top matches" />
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -18 }} contentContainerStyle={{ gap: 12, paddingHorizontal: 18, paddingBottom: 18 }}>

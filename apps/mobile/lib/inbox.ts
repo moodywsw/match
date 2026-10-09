@@ -18,7 +18,8 @@ export type NotificationType =
   | 'match_expired'
   | 'match_extended'
   | 'we_met'
-  | 'date_feedback';
+  | 'date_feedback'
+  | 'reward';
 
 export type InboxItem = {
   id: string;
@@ -149,6 +150,8 @@ export function inboxIcon(type: NotificationType): string {
       return '💛';
     case 'date_feedback':
       return '📝';
+    case 'reward':
+      return '🪙';
     default:
       return '🔔';
   }
@@ -201,6 +204,10 @@ export function inboxText(n: InboxItem): string {
       return `${n.actorName} says you met 💛 — confirm and share private feedback`;
     case 'date_feedback':
       return `How was your date with ${n.actorName}? Your feedback is private`;
+    case 'reward': {
+      const coins = typeof n.payload.coins === 'number' ? n.payload.coins : 50;
+      return `${n.actorName} joined with your invite — +${coins} coins for you both 🎉`;
+    }
     default:
       return 'New notification';
   }

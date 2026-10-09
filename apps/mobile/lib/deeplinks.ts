@@ -26,6 +26,8 @@ export async function openNotificationTarget(router: Router, type: string | unde
       if (id) return router.push({ pathname: '/chat/[conversationId]', params: { conversationId: id, ...focus } });
       return router.navigate('/(tabs)/messages');
     }
+    case 'reward':
+      return router.push('/wallet');
     case 'match': {
       const matchId = str('match_id');
       if (matchId) {
