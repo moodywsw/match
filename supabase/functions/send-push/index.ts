@@ -197,7 +197,37 @@ Deno.serve(async (req: Request) => {
   return await sendExpo(messages);
 });
 
+/**
+ * Android delivery: Expo forwards to FCM (needs the FCM V1 key uploaded to EAS and a
+ * build that contains google-services.json). channelId must match the channel the app
+ * creates ("default", see lib/notifications.ts + the expo-notifications plugin) and
+ * priority "high" lets chat/match pushes wake the device and show as heads-up.
+ */
+function forDelivery(m: ExpoPushMessage): ExpoPushMessage & { channelId: string; priority: "high" } {
+  return { ...m, channelId: "default", priority: "high" };
+}
+
+/** Drop tokens Expo reports as dead (app uninstalled / FCM token rotated). Best-effort. */
+async function pruneDeadTokens(messages: ExpoPushMessage[], tickets: unknown) {
+  const list = (tickets as { data?: unknown[] } | null)?.data;
+  if (!Array.isArray(list)) return;
+  const dead = list
+    .map((t, i) => ({ t: t as { status?: string; details?: { error?: string } }, to: messages[i]?.to }))
+    .filter(({ t, to }) => to && t?.status === "error" && t.details?.error === "DeviceNotRegistered")
+    .map(({ to }) => to as string);
+  if (!dead.length) return;
+  const url = Deno.env.get("SUPABASE_URL");
+  const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!url || !key) return;
+  try {
+    await createClient(url, key).from("push_tokens").delete().in("token", dead);
+  } catch {
+    // ignore — a stale token only costs one failed ticket next time
+  }
+}
+
 async function sendExpo(messages: ExpoPushMessage[]): Promise<Response> {
+  const outgoing = messages.map(forDelivery);
   const expoRes = await fetch("https://exp.host/--/api/v2/push/send", {
     method: "POST",
     headers: {
@@ -205,7 +235,7 @@ async function sendExpo(messages: ExpoPushMessage[]): Promise<Response> {
       "Accept-Encoding": "gzip, deflate",
       "Content-Type": "application/json",
     },
-    body: JSON.stringify(messages),
+    body: JSON.stringify(outgoing),
   });
 
   const expoJson = await expoRes.json().catch(() => null);
@@ -219,6 +249,8 @@ async function sendExpo(messages: ExpoPushMessage[]): Promise<Response> {
       502,
     );
   }
+
+  await pruneDeadTokens(outgoing, expoJson);
 
   return json({
     ok: true,

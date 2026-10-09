@@ -26,6 +26,9 @@ npm-debug.*
 google-service-account.json
 google-services.json
 *.p8
+# Firebase / Google service-account keys (FCM V1, Play upload) — upload to EAS, never commit
+*-firebase-adminsdk-*.json
+*service-account*.json
 
 # seeded test account credentials (supabase/seed)
 TEST_ACCOUNTS.md

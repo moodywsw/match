@@ -102,7 +102,12 @@ export async function registerForPushNotifications(
 
     return { status: 'registered', token };
   } catch (err) {
-    const detail = err instanceof Error ? err.message : 'token capture failed';
+    const raw = err instanceof Error ? err.message : 'token capture failed';
+    // Android builds without google-services.json (FCM) can't issue tokens yet —
+    // see docs/ANDROID_PUSH.md. Not an error for the user; the app works without push.
+    const detail = /firebase|fcm|google-services/i.test(raw)
+      ? 'fcm_not_configured: this build has no Firebase config (docs/ANDROID_PUSH.md)'
+      : raw;
     console.warn('[match] push token capture', detail);
     return { status: 'unavailable', token: null, detail };
   }

@@ -2,7 +2,21 @@ import type { ConfigContext, ExpoConfig } from 'expo/config';
 
 const PROJECT_ID = 'ec207fec-1ece-43a1-b5ef-d4383bc933f3';
 
-export default ({ config }: ConfigContext): ExpoConfig => {
+/**
+ * Firebase (FCM) config for Android push. Never committed (gitignored).
+ * - EAS cloud builds: the `GOOGLE_SERVICES_JSON` file env var (EAS gives a temp path).
+ * - Local builds: drop `google-services.json` next to this file.
+ * Without it the app still builds and runs; Android just can't get a push token.
+ * Adding it is a native change → new APK (the runtime fingerprint changes).
+ */
+function googleServicesFile(projectRoot: string): string | undefined {
+  if (process.env.GOOGLE_SERVICES_JSON) return process.env.GOOGLE_SERVICES_JSON;
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const fs = require('fs') as { existsSync(p: string): boolean };
+  return fs.existsSync(`${projectRoot}/google-services.json`) ? './google-services.json' : undefined;
+}
+
+export default ({ config, projectRoot }: ConfigContext): ExpoConfig => {
   const easProjectId =
     process.env.EAS_PROJECT_ID ||
     process.env.EXPO_PUBLIC_EAS_PROJECT_ID ||
@@ -49,7 +63,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       },
       predictiveBackGestureEnabled: false,
       package: 'com.moidy.match',
-      googleServicesFile: process.env.GOOGLE_SERVICES_JSON || undefined,
+      googleServicesFile: googleServicesFile(projectRoot),
     },
     web: {
       bundler: 'metro',

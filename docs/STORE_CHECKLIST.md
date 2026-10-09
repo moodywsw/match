@@ -62,7 +62,8 @@ bundle id / package `com.moidy.match` · Supabase project `pkpdheytmbwvqhpcaigm`
       privacy-policy site.
 - [ ] Content rating questionnaire (dating, user-generated content) and target audience
       18+ only.
-- [ ] FCM for push (Android). See "Adding Firebase (FCM) later" in section 6b.
+- [ ] FCM for push (Android). Step-by-step: **`docs/ANDROID_PUSH.md`** (code is ready; needs your Firebase files + a new APK).
+- [ ] Listing text EN/PT, screenshots plan, content rating, app content and data safety answers: **`docs/PLAY_LISTING.md`**.
 
 - [ ] Subscription localizations (pt-PT + English): same display names and descriptions as
       in "Subscription copy" below; list the benefits in the base plan description.

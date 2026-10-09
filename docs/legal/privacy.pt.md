@@ -16,7 +16,7 @@ A MATCH destina-se exclusivamente a pessoas com 18 ou mais anos. Verificamos a i
 
 • Conta: endereço de email, palavra-passe (guardada sob a forma de hash pelo nosso fornecedor de autenticação), datas de início de sessão.
 • Perfil: nome, data de nascimento (só mostramos a idade), género e quem pretende conhecer, intenção, biografia, interesses, fotografias, cidade ou localização aproximada, estado de verificação, a sua resposta de "sexta-feira".
-• Atividade: gostos, super gostos, passagens, matches, mensagens (texto, imagens, notas de voz), histórias (fotos, vídeos, texto, sondagens, perguntas) e respostas, publicações, comentários, inscrições em eventos, bloqueios e denúncias.
+• Atividade: gostos, super gostos, passagens, matches, mensagens (texto, imagens, notas de voz), histórias (fotos, vídeos, texto, sondagens, perguntas) e respostas, publicações, comentários, inscrições em eventos, lives que crias ou a que assistes (comentários, presentes, gostos e rondas de speed dating), bloqueios e denúncias.
 • Dispositivo: token de notificações push, tipo de dispositivo e versão da app, registos de erros e diagnóstico.
 • Compras: plano de subscrição, estado, loja, produto, datas de renovação e identificadores de transação. Os pagamentos são processados pela Apple ou pela Google; nunca recebemos os dados do seu cartão.
 
@@ -40,6 +40,8 @@ Outros utilizadores veem o seu perfil público (nome, idade, fotos, biografia, i
 
 • Supabase Inc. — base de dados, autenticação, armazenamento de ficheiros e funções de servidor (região: [região UE]).
 • Expo (650 Industries Inc.) — entrega de notificações push.
+• Google LLC (Firebase Cloud Messaging) — entrega de notificações push em dispositivos Android.
+• LiveKit Inc. — áudio/vídeo em tempo real para lives e chamadas (transmitido, não gravado).
 • RevenueCat Inc. — gestão de subscrições.
 • Apple Inc. / Google LLC — distribuição da app e pagamentos.
 Celebrámos acordos de tratamento de dados com estes fornecedores. Quando há transferências para fora do EEE, baseamo-nos no Quadro de Privacidade de Dados UE-EUA e/ou em Cláusulas Contratuais-Tipo. [Confirmar lista de fornecedores e regiões.]

@@ -16,7 +16,7 @@ MATCH is only for people aged 18 or over. We check the age you give us when you 
 
 • Account: email address, password (stored as a hash by our authentication provider), sign-in timestamps.
 • Profile: name, date of birth (we only show your age), gender and who you want to meet, relationship intention, bio, interests, photos, city or approximate location, verification status, your "Friday" answer.
-• Activity: likes, super likes, passes, matches, messages (text, images, voice notes), stories (photos, videos, text, polls, questions) and responses to them, posts, comments, event RSVPs, blocks and reports.
+• Activity: likes, super likes, passes, matches, messages (text, images, voice notes), stories (photos, videos, text, polls, questions) and responses to them, posts, comments, event RSVPs, lives you host or join (comments, gifts, likes and speed-dating rounds), blocks and reports.
 • Device: push notification token, device type and app version, crash and diagnostic logs.
 • Purchases: subscription tier, status, store, product, renewal dates and transaction identifiers. Payments are processed by Apple or Google; we never receive your card details.
 
@@ -40,6 +40,8 @@ Other users see your public profile (name, age, photos, bio, interests, intentio
 
 • Supabase Inc. — database, authentication, file storage and server functions (region: [EU region]).
 • Expo (650 Industries Inc.) — delivery of push notifications.
+• Google LLC (Firebase Cloud Messaging) — delivery of push notifications to Android devices.
+• LiveKit Inc. — real-time audio/video for lives and calls (streamed, not recorded).
 • RevenueCat Inc. — subscription management.
 • Apple Inc. / Google LLC — app distribution and payments.
 We have data processing agreements with these providers. Where data is transferred outside the EEA, we rely on the EU–US Data Privacy Framework and/or Standard Contractual Clauses. [Confirm provider list and regions.]
