@@ -1,7 +1,7 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ArrowLeft, Heart, MessageCircle, Send } from 'lucide-react-native';
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, TextInput, View } from 'react-native';
+import { ActivityIndicator, Image, KeyboardAvoidingView, Pressable, ScrollView, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { inputStyle } from '@/components/app/AuthForm';
@@ -77,7 +77,7 @@ export default function PostScreen() {
   };
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, backgroundColor: T.ink }}>
+    <KeyboardAvoidingView behavior="padding" style={{ flex: 1, backgroundColor: T.ink }}>
       <View style={{ paddingTop: insets.top + 10, paddingHorizontal: 14, paddingBottom: 10, flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomWidth: 1, borderBottomColor: T.border }}>
         <IconBtn onPress={back}>
           <ArrowLeft size={18} color={T.text} />

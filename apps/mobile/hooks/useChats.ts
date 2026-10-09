@@ -5,6 +5,7 @@ import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { fetchChatList, type ChatListItem } from '@/lib/chat';
 import { CHAT_PREVIEWS, PROFILES, SHOW_DEMO_CONTENT } from '@/lib/mock';
+import { friendlyError } from '@/lib/errors';
 
 export type ChatRow = {
   key: string;
@@ -47,7 +48,7 @@ export function useChats() {
     try {
       setReal(await fetchChatList(user.id));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load matches');
+      setError(friendlyError(err, 'Could not load your matches'));
     } finally {
       setLoading(false);
     }

@@ -12,7 +12,7 @@ import { LEGAL_DRAFT_BANNER, type LegalDoc, type LegalLang } from '@/lib/legal';
 export function LegalScreen({ docs }: { docs: Record<LegalLang, LegalDoc> }) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const [lang, setLang] = useState<LegalLang>('pt');
+  const [lang, setLang] = useState<LegalLang>('en');
   const doc = docs[lang];
 
   return (

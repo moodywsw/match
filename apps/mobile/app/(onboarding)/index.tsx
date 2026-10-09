@@ -2,7 +2,7 @@ import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Check, ChevronLeft, Sparkles } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Easing, KeyboardAvoidingView, Platform, Pressable, ScrollView, TextInput, View } from 'react-native';
+import { Animated, BackHandler, Easing, KeyboardAvoidingView, Pressable, ScrollView, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { inputStyle } from '@/components/app/AuthForm';
@@ -11,6 +11,7 @@ import { Backdrop, Chip, FadeUp, GhostButton, PrimaryButton, Skeleton } from '@/
 import { Txt } from '@/components/ui/Txt';
 import { T } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
+import { friendlyError } from '@/lib/errors';
 import { fetchAllInterests, setUserInterests, type Interest } from '@/lib/interests';
 import { FRIDAY_OPTIONS, INTENTIONS, ONBOARDING_POOLS } from '@/lib/mock';
 import { ageFromBirthDate, defaultBirthDate, upsertOwnProfile } from '@/lib/profile';
@@ -114,6 +115,19 @@ export default function OnboardingScreen() {
     fetchAllInterests().then(setCatalog).catch((e) => console.warn(e));
   }, []);
 
+  // Android back steps through the form instead of leaving the app mid-onboarding.
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (stage === 'building') return true;
+      if (step > 0) {
+        setStep((s) => s - 1);
+        return true;
+      }
+      return false;
+    });
+    return () => sub.remove();
+  }, [step, stage]);
+
   const toggle = (t: string) => setPicked((p) => (p.includes(t) ? p.filter((x) => x !== t) : [...p, t]));
 
   function validateBasics(): boolean {
@@ -155,8 +169,7 @@ export default function OnboardingScreen() {
       router.replace('/(tabs)/home');
     } catch (err) {
       setStage('form');
-      const msg = err instanceof Error ? err.message : String((err as { message?: string })?.message ?? '');
-      setError(msg.includes('must_be_18') ? 'You need to be 18 or older to use MATCH.' : msg || 'Could not save your profile');
+      setError(friendlyError(err, 'Could not save your profile. Check your connection and try again.'));
     }
   }
 
@@ -172,7 +185,7 @@ export default function OnboardingScreen() {
       {stage === 'building' ? (
         <BuildingScreen name={name.trim()} />
       ) : (
-        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
           <View style={{ flex: 1, paddingTop: insets.top + 28, paddingHorizontal: 24, paddingBottom: insets.bottom + 12 }}>
             <View style={{ flexDirection: 'row', gap: 6, marginBottom: 28 }}>
               {STEPS.map((_, i) =>

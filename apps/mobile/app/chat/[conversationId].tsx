@@ -2,8 +2,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { ArrowLeft, Check, CheckCheck, Image as ImageIcon, Mic, MoreHorizontal, Phone, PhoneMissed, Send, Video } from 'lucide-react-native';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, AppState, Easing, FlatList, Image, KeyboardAvoidingView, Platform, Pressable, TextInput, View } from 'react-native';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, AppState, Easing, FlatList, Image, KeyboardAvoidingView, Pressable, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ImageBubble, RecordingBar, StaticVoiceBubble, useVoiceRecorder, VoiceBubble } from '@/components/app/ChatMedia';
@@ -136,7 +136,8 @@ function CallPill({ m, onCall }: { m: Msg; onCall?: (kind: CallKind) => void }) 
   );
 }
 
-function MessageRow({ m, onCall }: { m: Msg; onCall?: (kind: CallKind) => void }) {
+// Memoized: typing indicators / new messages shouldn't re-render every existing bubble.
+const MessageRow = memo(function MessageRow({ m, onCall }: { m: Msg; onCall?: (kind: CallKind) => void }) {
   if (m.type === 'call') return <CallPill m={m} onCall={onCall} />;
   return (
     <View>
@@ -144,7 +145,7 @@ function MessageRow({ m, onCall }: { m: Msg; onCall?: (kind: CallKind) => void }
       <Receipt m={m} />
     </View>
   );
-}
+});
 
 function Bubble({ m }: { m: Msg }) {
   const radius = { borderRadius: 18, borderBottomRightRadius: m.mine ? 4 : 18, borderBottomLeftRadius: m.mine ? 18 : 4 };
@@ -428,6 +429,7 @@ export default function ChatScreen() {
     },
     [isDemo, peer, conversationId, placeCall, toast]
   );
+  const renderMessage = useCallback(({ item }: { item: Msg }) => <MessageRow m={item} onCall={call} />, [call]);
 
   const header = useMemo(
     () => (
@@ -453,7 +455,7 @@ export default function ChatScreen() {
   );
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
       <Backdrop />
       <View style={{ paddingTop: insets.top + 6, paddingHorizontal: 18, flex: 1 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, paddingHorizontal: 4, borderBottomWidth: 1, borderBottomColor: T.border }}>
@@ -502,7 +504,10 @@ export default function ChatScreen() {
           keyExtractor={(m) => m.id}
           ListHeaderComponent={header}
           contentContainerStyle={{ paddingVertical: 6, paddingHorizontal: 4, gap: 8 }}
-          renderItem={({ item }) => <MessageRow m={item} onCall={call} />}
+          renderItem={renderMessage}
+          initialNumToRender={20}
+          maxToRenderPerBatch={12}
+          windowSize={11}
           ListFooterComponent={typing ? <TypingDots /> : null}
           ListEmptyComponent={
             <Txt size={13} color={T.mutedDim} center style={{ marginTop: 30 }}>

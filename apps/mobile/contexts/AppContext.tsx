@@ -198,6 +198,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setRealPeople([]);
       setMyPhoto(null);
       setMyInterests([]);
+      // Don't leak the previous account's state to the next sign-in on this phone.
+      setRemoved(new Set());
+      setMatch(null);
+      setTier('free');
+      setDeckFilters({});
     }
   }, [user?.id]);
 
@@ -260,7 +265,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           toast('No super likes left today');
           openPaywall(tier === 'match_plus' ? 'super_match' : 'match_plus');
         } else {
-          toast(msg.includes('duplicate') ? `You already liked ${p.name}` : msg);
+          toast(msg.includes('duplicate') ? `You already liked ${p.name}` : friendlyError(err, 'Could not send like — try again'));
         }
       }
     },

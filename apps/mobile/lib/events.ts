@@ -1,3 +1,4 @@
+import { friendlyError } from './errors';
 import { readDevicePosition } from './location';
 import { supabase } from './supabase';
 import { extFromMime, uploadToBucket } from './upload';
@@ -225,7 +226,7 @@ export function eventErrorMessage(err: unknown): string {
   if (msg.includes('not_allowed')) return "You can't join this event";
   if (msg.includes('location_denied')) return 'Allow location access to pin the event on the map';
   if (msg.includes('events_shape_check')) return 'Check the title (3–80 chars), times and capacity (2–5000)';
-  return msg;
+  return friendlyError(err, 'Something went wrong with this event — try again');
 }
 
 export function fmtEventDate(iso: string, endIso?: string | null): string {

@@ -1,6 +1,6 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { Heart, MapPin, MoreHorizontal, RotateCcw, Sparkles, SlidersHorizontal, Star, X, Zap } from 'lucide-react-native';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Dimensions, PanResponder, Pressable, ScrollView, View } from 'react-native';
 
 import { useBarInsets } from '@/components/app/Bars';
@@ -13,6 +13,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { DISCOVERY_MODES, hash01, type Person } from '@/lib/mock';
 import { activateBoost, fetchBoostStatus, perkErrorCode, recordProfileView } from '@/lib/perks';
 import { blockUser, reportUser } from '@/lib/safety';
+import { friendlyError } from '@/lib/errors';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 const SWIPE = 110;
@@ -127,10 +128,11 @@ export default function DiscoverTab() {
     return pinPriority(sortForMode(filtered, mode, me?.interests ?? []), rewoundId);
   }, [people, likedIds, passedIds, exiting, filters, mode, me?.interests, plus, rewoundId]);
 
-  const openDetail = (p: Person) => {
+  const openDetail = useCallback((p: Person) => {
     setDetail(p);
     if (p.real) recordProfileView(p.id).catch((e) => console.warn('[match] record_profile_view failed', e));
-  };
+  }, []);
+  const openSafety = useCallback((p: Person) => setSafety(p), []);
 
   const doRewind = async () => {
     if (busy.current) return;
@@ -153,7 +155,8 @@ export default function DiscoverTab() {
     Animated.timing(position, { toValue: { x: dir === 'pass' ? -SCREEN_W * 1.4 : SCREEN_W * 1.4, y: 0 }, duration: 220, useNativeDriver: true }).start(() => {
       setExiting(card.id);
       if (dir === 'pass') pass(card);
-      else void like(card, { superLike: dir === 'super' });
+      // If the like fails (e.g. daily limit) the card must come back instead of staying hidden.
+      else void Promise.resolve(like(card, { superLike: dir === 'super' })).finally(() => setExiting((e) => (e === card.id ? null : e)));
     });
   };
   const advanceRef = useRef(advance);
@@ -174,11 +177,17 @@ export default function DiscoverTab() {
     [position]
   );
 
-  const rotate = position.x.interpolate({ inputRange: [-180, 0, 180], outputRange: ['-10deg', '0deg', '10deg'] });
-  const likeOpacity = position.x.interpolate({ inputRange: [40, 41, 120], outputRange: [0, 0.6, 1], extrapolate: 'clamp' });
-  const passOpacity = position.x.interpolate({ inputRange: [-120, -41, -40], outputRange: [1, 0.6, 0], extrapolate: 'clamp' });
+  const { rotate, likeOpacity, passOpacity } = useMemo(
+    () => ({
+      rotate: position.x.interpolate({ inputRange: [-180, 0, 180], outputRange: ['-10deg', '0deg', '10deg'] }),
+      likeOpacity: position.x.interpolate({ inputRange: [40, 41, 120], outputRange: [0, 0.6, 1], extrapolate: 'clamp' }),
+      passOpacity: position.x.interpolate({ inputRange: [-120, -41, -40], outputRange: [1, 0.6, 0], extrapolate: 'clamp' }),
+    }),
+    [position]
+  );
 
-  const cardH = Math.max(360, areaH - 6 - 12);
+  // Small phones: let the card shrink with the available area instead of overflowing the buttons.
+  const cardH = Math.max(260, areaH - 6 - 12);
 
   return (
     <View style={{ flex: 1, paddingTop: bars.top + 14, paddingBottom: bars.bottom + 12 }}>
@@ -274,8 +283,8 @@ export default function DiscoverTab() {
                           isTop={isTop}
                           likeOpacity={likeOpacity}
                           passOpacity={passOpacity}
-                          onWhy={() => openDetail(p)}
-                          onSafety={() => setSafety(p)}
+                          onWhy={openDetail}
+                          onSafety={openSafety}
                         />
                       </Animated.View>
                     );
@@ -334,7 +343,7 @@ export default function DiscoverTab() {
             toast(`${safety.name} blocked`);
             setSafety(null);
           } catch (err) {
-            toast(err instanceof Error ? err.message : 'Block failed');
+            toast(friendlyError(err, 'Block failed — try again'));
           }
         }}
         onReport={async (category, details) => {
@@ -344,7 +353,7 @@ export default function DiscoverTab() {
             toast('Report submitted — thank you');
             setSafety(null);
           } catch (err) {
-            toast(err instanceof Error ? err.message : 'Report failed');
+            toast(friendlyError(err, 'Report failed — try again'));
           }
         }}
       />
@@ -352,7 +361,7 @@ export default function DiscoverTab() {
   );
 }
 
-function Card({
+const Card = memo(function Card({
   p,
   isTop,
   likeOpacity,
@@ -364,8 +373,8 @@ function Card({
   isTop: boolean;
   likeOpacity: Animated.AnimatedInterpolation<number>;
   passOpacity: Animated.AnimatedInterpolation<number>;
-  onWhy: () => void;
-  onSafety: () => void;
+  onWhy: (p: Person) => void;
+  onSafety: (p: Person) => void;
 }) {
   return (
     <View style={{ flex: 1, borderRadius: 26, overflow: 'hidden' }}>
@@ -391,7 +400,7 @@ function Card({
         </View>
         <View style={{ position: 'absolute', top: 14, left: 14 }}>
           {p.real ? (
-            <Pressable onPress={onSafety} hitSlop={8} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: T.chipDark, alignItems: 'center', justifyContent: 'center' }}>
+            <Pressable onPress={() => onSafety(p)} hitSlop={8} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: T.chipDark, alignItems: 'center', justifyContent: 'center' }}>
               <MoreHorizontal size={16} color={T.text} />
             </Pressable>
           ) : (
@@ -446,7 +455,7 @@ function Card({
           </Txt>
         ) : null}
         {isTop ? (
-          <Pressable onPress={onWhy} hitSlop={8} style={{ marginTop: 6, alignSelf: 'flex-start' }}>
+          <Pressable onPress={() => onWhy(p)} hitSlop={8} style={{ marginTop: 6, alignSelf: 'flex-start' }}>
             <Txt w={700} size={11.5} color={T.rose}>
               Why you match →
             </Txt>
@@ -455,4 +464,4 @@ function Card({
       </View>
     </View>
   );
-}
+});

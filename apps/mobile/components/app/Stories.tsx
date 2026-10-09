@@ -2,7 +2,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Camera, Eye, Heart, MessageCircle, Send, Sparkles, Trash2, Type, Video as VideoIcon, Volume2, VolumeX, X } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Easing, Image, KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { Animated, Easing, Image, KeyboardAvoidingView, Modal, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import { createVideoPlayer, useVideoPlayer, VideoView } from 'expo-video';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -17,6 +17,7 @@ import { pushLatestNotification } from '@/lib/push';
 import { deleteStory, fetchMyVote, fetchPollCounts, fetchStoryStats, markStoryViewed, respondToStory, type NewStory } from '@/lib/stories';
 
 import { inputStyle } from './AuthForm';
+import { friendlyError } from '@/lib/errors';
 
 const DURATION = 4500;
 
@@ -213,7 +214,7 @@ function Viewer({
       void pushLatestNotification(user.id);
       toast(frame.type === 'question' ? `Answer sent to ${user.name} 💬` : `Reply sent to ${user.name} 💬`);
     } catch (err) {
-      toast(err instanceof Error ? err.message : 'Reply failed');
+      toast(friendlyError(err, 'Reply failed — try again'));
     }
   };
 
@@ -230,7 +231,7 @@ function Viewer({
       toast(res === 'duplicate' ? 'You already voted' : `Voted "${label}"`);
     } catch (err) {
       setVoted(null);
-      toast(err instanceof Error ? err.message : 'Vote failed');
+      toast(friendlyError(err, 'Vote failed — try again'));
     }
   };
 
@@ -241,7 +242,7 @@ function Viewer({
       if (res === 'ok') void pushLatestNotification(user.id);
       toast(res === 'duplicate' ? 'Already liked ❤️' : `You liked ${user.name}'s story ❤️`);
     } catch (err) {
-      toast(err instanceof Error ? err.message : 'Like failed');
+      toast(friendlyError(err, 'Like failed — try again'));
     }
   };
 
@@ -253,14 +254,14 @@ function Viewer({
       onDeleted?.();
       onClose();
     } catch (err) {
-      toast(err instanceof Error ? err.message : 'Delete failed');
+      toast(friendlyError(err, 'Delete failed — try again'));
     }
   };
 
   const total = counts ? counts.reduce((a, b) => a + b, 0) : 0;
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: '#000' }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: '#000' }} behavior="padding">
       {frame.type === 'video' ? (
         videoUri ? (
           <VideoView player={player} style={StyleSheet.absoluteFill} contentFit="cover" nativeControls={false} />

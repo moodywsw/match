@@ -2,6 +2,7 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
 
 import { fetchPrimaryPhotos } from './profile';
 import { supabase } from './supabase';
+import { friendlyError } from './errors';
 
 /**
  * Live rooms — all state is server-backed (supabase/migrations/20261008_live_rooms.sql):
@@ -199,10 +200,10 @@ export function liveErrorMessage(err: unknown): string {
   const msg = (err as { message?: string })?.message || String(err);
   if (msg.includes('rate_limited')) return "Slow down a little — try again in a moment";
   if (msg.includes('stream_ended')) return 'This live has ended';
-  if (msg.includes('not_allowed')) return "You can't join this live";
   if (msg.includes('guest_not_allowed')) return 'You can only invite one of your matches';
+  if (msg.includes('not_allowed')) return "You can't join this live";
   if (msg.includes('cannot_vote_own')) return "You can't vote on your own LIVE MATCH";
   if (msg.includes('not_host')) return 'Only the host can end this live';
   if (msg.includes('live_messages_body_check') || msg.includes('check constraint')) return 'Messages must be 1–200 characters';
-  return msg;
+  return friendlyError(err, 'Something went wrong with this live — try again');
 }

@@ -64,7 +64,10 @@ export function CallOverlay({
       transparent={false}
       animationType="fade"
       statusBarTranslucent
-      onRequestClose={() => (active ? (active.phase === 'ringing' && active.role === 'callee' ? h.onDecline() : h.onHangUp()) : onCloseUnsupported())}>
+      onRequestClose={() => {
+        // Android back must not silently end/decline a call — use the on-screen buttons.
+        if (!active) onCloseUnsupported();
+      }}>
       {active ? (
         <CallView a={active} {...h} />
       ) : unsupported ? (

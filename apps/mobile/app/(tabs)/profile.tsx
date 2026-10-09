@@ -15,7 +15,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useChats } from '@/hooks/useChats';
 import { intentionLabel } from '@/lib/mock';
 import { fetchMyPhotos, pickAndUploadProfilePhoto, setPrimaryPhoto, type PhotoRow } from '@/lib/photos';
-import { friendlyError } from '@/lib/errors';
+import { friendlyError, isCancelled } from '@/lib/errors';
 
 const BADGE_RULES: [RegExp, string][] = [
   [/travel|hik|beach/i, 'Travel Addict'],
@@ -60,8 +60,7 @@ export default function ProfileTab() {
       await Promise.all([loadPhotos(), refreshMe()]);
       toast('Photo added 📸');
     } catch (err) {
-      const msg = friendlyError(err, 'Upload failed');
-      if (!/cancel/i.test(msg)) toast(msg);
+      if (!isCancelled(err)) toast(friendlyError(err, 'Upload failed — try again'));
     } finally {
       setUploading(false);
     }

@@ -9,13 +9,9 @@ import type { EntitlementId } from './iap';
 export type PaywallLang = 'pt' | 'en';
 export type PlanKey = 'free' | EntitlementId;
 
+// The app UI is English (per the prototype); PT stays available via the manual toggle.
 export function defaultPaywallLang(): PaywallLang {
-  try {
-    const loc = Intl.DateTimeFormat().resolvedOptions().locale || '';
-    return loc.toLowerCase().startsWith('pt') ? 'pt' : 'en';
-  } catch {
-    return 'en';
-  }
+  return 'en';
 }
 
 export const PLAN_FEATURES: Record<PaywallLang, Record<PlanKey, string[]>> = {

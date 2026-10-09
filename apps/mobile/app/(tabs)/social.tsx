@@ -248,10 +248,10 @@ export default function SocialTab() {
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, paddingHorizontal: 14 }}>
                 <Avatar uri={p.photo} name={p.name} size={36} />
                 <View style={{ flex: 1 }}>
-                  <Txt w={700} size={13}>
+                  <Txt w={700} size={13} numberOfLines={1}>
                     {p.name}
                   </Txt>
-                  <Txt size={10.5} color={T.mutedDim}>
+                  <Txt size={10.5} color={T.mutedDim} numberOfLines={1}>
                     {p.meta}
                   </Txt>
                 </View>

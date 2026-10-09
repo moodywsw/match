@@ -14,6 +14,7 @@ import { timeAgo } from '@/lib/inbox';
 import type { StoryFrame } from '@/lib/mock';
 import { fetchPrimaryPhotos } from '@/lib/profile';
 import { fetchOwnStoryFrame, fetchStoryActivity, type StoryActivity } from '@/lib/stories';
+import { friendlyError } from '@/lib/errors';
 
 /** Owner-only: who viewed, liked, replied to / answered / voted on a story. */
 export default function StoryActivityScreen() {
@@ -41,7 +42,7 @@ export default function StoryActivityScreen() {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes('not_owner')) setDenied(true);
-      else toast(msg);
+      else toast(friendlyError(err, 'Could not load story activity'));
     } finally {
       setLoading(false);
     }

@@ -1,5 +1,5 @@
 import { type ReactNode } from 'react';
-import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import { KeyboardAvoidingView, Modal, Pressable, ScrollView, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { T } from '@/constants/theme';
@@ -35,7 +35,7 @@ export function Sheet({
   const Body = scroll ? ScrollView : View;
   return (
     <Modal visible={visible} transparent animationType="fade" statusBarTranslucent onRequestClose={onClose}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, justifyContent: 'flex-end' }}>
+      <KeyboardAvoidingView behavior="padding" style={{ flex: 1, justifyContent: 'flex-end' }}>
         <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: scrim }]} onPress={onClose} />
         <PopIn style={[styles.sheet, { maxHeight, paddingBottom: Math.max(insets.bottom, 16) + 14 }, height != null ? { height } : null]}>
           <View style={styles.handle} />

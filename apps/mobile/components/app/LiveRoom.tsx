@@ -1,7 +1,7 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { Gift as GiftIcon, Heart, Radio, Send, Users, Video, X } from 'lucide-react-native';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { Alert, Image, KeyboardAvoidingView, Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Sheet } from '@/components/ui/Sheet';
@@ -33,9 +33,11 @@ import { GiftOverlay, GiftSheet, TopGiftersPill, TopGiftersSheet, useGiftFeed } 
 import { LiveVideo, type LiveVideoStatus } from './LiveVideo';
 
 export function LiveRoomView({ room, onClose }: { room: LiveRoom | null; onClose: () => void }) {
+  // Android back goes through the room's own close (host gets the "End your live?" confirm).
+  const closeRef = useRef<() => void>(onClose);
   return (
-    <Modal visible={!!room} animationType="slide" statusBarTranslucent onRequestClose={onClose}>
-      {room ? <Room room={room} onClose={onClose} /> : null}
+    <Modal visible={!!room} animationType="slide" statusBarTranslucent onRequestClose={() => closeRef.current()}>
+      {room ? <Room room={room} onClose={onClose} closeRef={closeRef} /> : null}
     </Modal>
   );
 }
@@ -202,7 +204,15 @@ function videoNote(s: LiveVideoStatus | null): string | null {
   }
 }
 
-function Room({ room, onClose }: { room: LiveRoom; onClose: () => void }) {
+function Room({
+  room,
+  onClose,
+  closeRef,
+}: {
+  room: LiveRoom;
+  onClose: () => void;
+  closeRef: { current: () => void };
+}) {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const real = !!room.real;
@@ -244,6 +254,7 @@ function Room({ room, onClose }: { room: LiveRoom; onClose: () => void }) {
       },
     ]);
   };
+  closeRef.current = close;
 
   const totalVotes = m.votes.yes + m.votes.no;
   const yesPct = totalVotes ? Math.round((m.votes.yes / totalVotes) * 100) : 0;
@@ -251,7 +262,7 @@ function Room({ room, onClose }: { room: LiveRoom; onClose: () => void }) {
   const showCover = !real || videoStatus !== 'live';
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: T.ink }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: T.ink }} behavior="padding">
       {showCover && room.cover ? <Image source={{ uri: room.cover }} style={[StyleSheet.absoluteFill, { opacity: 0.55 }]} resizeMode="cover" /> : null}
       {real && !ended ? <LiveVideo streamId={room.id} onStatus={setVideoStatus} /> : null}
       <LinearGradient colors={['rgba(10,8,14,0.5)', 'rgba(10,8,14,0.2)', 'rgba(10,8,14,0.9)']} locations={[0, 0.4, 1]} style={StyleSheet.absoluteFill} pointerEvents="none" />
