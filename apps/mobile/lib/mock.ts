@@ -101,6 +101,10 @@ export type Person = {
   superLikedMe?: boolean;
   /** Onboarding "Friday night" answer (FRIDAY_OPTIONS id or free text). */
   fridayAnswer?: string | null;
+  /** "Real photos — verified by dates" (3+ positive private post-date feedbacks). */
+  realPhotos?: boolean;
+  /** Today's picks: server-written "why this pick" line. */
+  pickReason?: string | null;
 };
 
 const NAMES: [string, number, string][] = [

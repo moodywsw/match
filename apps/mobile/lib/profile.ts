@@ -38,7 +38,30 @@ export type DiscoverProfile = {
   boosted?: boolean;
   /** Super liked the viewer (shown first + highlighted). */
   superLikedMe?: boolean;
+  /** "Real photos — verified by dates" trust badge. */
+  realPhotos?: boolean;
 };
+
+/** Trust badges for a set of people (boolean only — counts never leave the server). Fails soft. */
+export async function fetchTrustBadges(ids: string[]): Promise<Record<string, boolean>> {
+  if (!ids.length) return {};
+  try {
+    const { data, error } = await supabase.rpc('get_trust_badges', { p_ids: ids.slice(0, 100) });
+    if (error) throw error;
+    const out: Record<string, boolean> = {};
+    for (const r of (data || []) as { user_id: string; real_photos: boolean }[]) out[r.user_id] = !!r.real_photos;
+    return out;
+  } catch (err) {
+    console.warn('[match] trust badges failed', err);
+    return {};
+  }
+}
+
+/** Photos + interests + trust badges for server profile rows. */
+export async function hydratePeople(ids: string[]) {
+  const [photos, interestMap, trust] = await Promise.all([fetchPrimaryPhotos(ids), fetchInterestLabelsForUsers(ids), fetchTrustBadges(ids)]);
+  return { photos, interestMap, trust };
+}
 
 /** Server-side deck filters. Advanced fields are ignored by the RPC for free users. */
 export type DeckFilters = {
@@ -193,10 +216,7 @@ export async function fetchDiscoverDeck(
   };
   const rows = (data || []) as Row[];
   const ids = rows.map((r) => r.id);
-  const [photos, interestMap] = await Promise.all([
-    fetchPrimaryPhotos(ids),
-    fetchInterestLabelsForUsers(ids),
-  ]);
+  const { photos, interestMap, trust } = await hydratePeople(ids);
 
   return rows.map((r) => ({
     id: r.id,
@@ -215,6 +235,7 @@ export async function fetchDiscoverDeck(
     isLive: true,
     boosted: !!r.boosted,
     superLikedMe: !!r.super_liked_me,
+    realPhotos: !!trust[r.id],
   }));
 }
 

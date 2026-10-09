@@ -1,5 +1,5 @@
 import { LinearGradient } from 'expo-linear-gradient';
-import { Heart, MapPin, MoreHorizontal, RotateCcw, Sparkles, SlidersHorizontal, Star, X, Zap } from 'lucide-react-native';
+import { Camera, Compass, Heart, MapPin, MoreHorizontal, RotateCcw, Sparkles, SlidersHorizontal, Star, X, Zap } from 'lucide-react-native';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Dimensions, PanResponder, Pressable, ScrollView, View } from 'react-native';
 
@@ -10,7 +10,9 @@ import { Txt } from '@/components/ui/Txt';
 import { T } from '@/constants/theme';
 import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
+import { personFromDiscover } from '@/lib/compat';
 import { DISCOVERY_MODES, hash01, type Person } from '@/lib/mock';
+import { countdownLabel, fetchDailyPicks } from '@/lib/picks';
 import { activateBoost, fetchBoostStatus, perkErrorCode, recordProfileView } from '@/lib/perks';
 import { blockUser, reportUser } from '@/lib/safety';
 import { friendlyError } from '@/lib/errors';
@@ -96,6 +98,60 @@ function useBoost() {
   return { active, label, start, available: left.quota - left.used };
 }
 
+type PicksState = { loading: boolean; error: string | null; refreshesAt: string | null; quota: number; people: Person[]; actedIds: Set<string> };
+
+/** Today's curated picks (server-generated per local day). */
+function usePicks() {
+  const { user, profile } = useAuth();
+  const { me } = useApp();
+  const [st, setSt] = useState<PicksState>({ loading: true, error: null, refreshesAt: null, quota: 0, people: [], actedIds: new Set() });
+  const interestsKey = (me?.interests ?? []).join('|');
+  const load = useCallback(async () => {
+    if (!user?.id) return;
+    setSt((s) => ({ ...s, loading: s.people.length === 0, error: null }));
+    try {
+      const d = await fetchDailyPicks();
+      const meC = { id: user.id, interests: interestsKey ? interestsKey.split('|') : [], intention: profile?.intention ?? null };
+      setSt({
+        loading: false,
+        error: null,
+        refreshesAt: d.refreshesAt,
+        quota: d.quota,
+        people: d.picks.map((p) => ({ ...personFromDiscover(meC, p), pickReason: p.reason })),
+        actedIds: new Set(d.picks.filter((p) => p.acted).map((p) => p.id)),
+      });
+    } catch (err) {
+      setSt((s) => ({ ...s, loading: false, error: friendlyError(err, "Couldn't load today's picks") }));
+    }
+  }, [user?.id, profile?.intention, interestsKey]);
+  useEffect(() => {
+    void load();
+  }, [load]);
+  return { ...st, reload: load };
+}
+
+/** Ticks once a second on its own so the card stack doesn't re-render. */
+const Countdown = memo(function Countdown({ to, onDone, size = 12, color = T.amber }: { to: string | null; onDone?: () => void; size?: number; color?: string }) {
+  const [now, setNow] = useState(Date.now());
+  const done = useRef(false);
+  useEffect(() => {
+    done.current = false;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [to]);
+  useEffect(() => {
+    if (to && !done.current && new Date(to).getTime() <= now) {
+      done.current = true;
+      onDone?.();
+    }
+  }, [now, to, onDone]);
+  return (
+    <Txt v="mono" w={700} size={size} color={color}>
+      {countdownLabel(to, now)}
+    </Txt>
+  );
+});
+
 export default function DiscoverTab() {
   const bars = useBarInsets();
   const { user } = useAuth();
@@ -110,10 +166,17 @@ export default function DiscoverTab() {
   const [safety, setSafety] = useState<Person | null>(null);
   const [areaH, setAreaH] = useState(480);
   const [exiting, setExiting] = useState<string | null>(null);
+  const [tab, setTab] = useState<'picks' | 'explore'>('picks');
+  const picks = usePicks();
+  const isPicks = tab === 'picks';
+  const openPickIds = useMemo(
+    () => new Set(picks.people.filter((p) => !picks.actedIds.has(p.id) && !likedIds.has(p.id) && !passedIds.has(p.id)).map((p) => p.id)),
+    [picks.people, picks.actedIds, likedIds, passedIds]
+  );
   const position = useRef(new Animated.ValueXY()).current;
   const busy = useRef(false);
 
-  const deck = useMemo(() => {
+  const exploreDeck = useMemo(() => {
     const filtered = people.filter(
       (p) =>
         !likedIds.has(p.id) &&
@@ -123,10 +186,18 @@ export default function DiscoverTab() {
         (p.age == null || filters.minAge == null || p.age >= filters.minAge) &&
         (p.age == null || filters.maxAge == null || p.age <= filters.maxAge) &&
         (!plus || !filters.verifiedOnly || p.verified) &&
-        (!plus || !filters.intention || p.intentionCode === filters.intention)
+        (!plus || !filters.intention || p.intentionCode === filters.intention) &&
+        // today's open picks live in their own tab
+        !openPickIds.has(p.id)
     );
     return pinPriority(sortForMode(filtered, mode, me?.interests ?? []), rewoundId);
-  }, [people, likedIds, passedIds, exiting, filters, mode, me?.interests, plus, rewoundId]);
+  }, [people, likedIds, passedIds, exiting, filters, mode, me?.interests, plus, rewoundId, openPickIds]);
+  const picksDeck = useMemo(
+    () => pinPriority(picks.people.filter((p) => (openPickIds.has(p.id) || p.id === rewoundId) && p.id !== exiting && !likedIds.has(p.id) && !passedIds.has(p.id)), rewoundId),
+    [picks.people, openPickIds, rewoundId, exiting, likedIds, passedIds]
+  );
+  const deck = isPicks ? picksDeck : exploreDeck;
+  const picksLeft = picksDeck.length;
 
   const openDetail = useCallback((p: Person) => {
     setDetail(p);
@@ -138,6 +209,7 @@ export default function DiscoverTab() {
     if (busy.current) return;
     const id = await rewind();
     if (id) setExiting(null);
+    if (id && picks.people.some((p) => p.id === id)) void picks.reload();
   };
 
   const current = deck[0] ?? null;
@@ -192,6 +264,55 @@ export default function DiscoverTab() {
   return (
     <View style={{ flex: 1, paddingTop: bars.top + 14, paddingBottom: bars.bottom + 12 }}>
       <FadeUp style={{ flex: 1 }}>
+        <View style={{ flexDirection: 'row', gap: 4, backgroundColor: T.surface2, borderRadius: 999, padding: 4, marginHorizontal: 18, marginBottom: 10 }}>
+          {(
+            [
+              ['picks', "Today's picks"],
+              ['explore', 'Explore more'],
+            ] as const
+          ).map(([key, label]) => (
+            <Pressable
+              key={key}
+              onPress={() => setTab(key)}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: tab === key }}
+              style={{ flex: 1, paddingVertical: 8, borderRadius: 999, backgroundColor: tab === key ? T.surface : 'transparent', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+              {key === 'picks' ? <Sparkles size={13} color={tab === key ? T.amber : T.muted} /> : <Compass size={13} color={tab === key ? T.text : T.muted} />}
+              <Txt w={700} size={12.5} color={tab === key ? T.text : T.muted}>
+                {label}
+              </Txt>
+              {key === 'picks' && picksLeft > 0 ? (
+                <View style={{ minWidth: 18, height: 18, borderRadius: 9, paddingHorizontal: 5, backgroundColor: T.rose, alignItems: 'center', justifyContent: 'center' }}>
+                  <Txt w={800} size={10} color="#fff">
+                    {picksLeft}
+                  </Txt>
+                </View>
+              ) : null}
+            </Pressable>
+          ))}
+        </View>
+
+        {isPicks ? (
+          <View style={{ marginHorizontal: 18, marginBottom: 2 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+              <Txt size={12} color={T.muted} numberOfLines={1} style={{ flexShrink: 1 }}>
+                {picks.quota ? `${picksLeft} of ${picks.quota} left · chosen for you` : 'Chosen for you every day'}
+              </Txt>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                <Txt size={11} color={T.mutedDim}>
+                  New in
+                </Txt>
+                <Countdown to={picks.refreshesAt} onDone={picks.reload} />
+              </View>
+            </View>
+            {!plus && picksLeft > 0 ? (
+              <Txt size={11} color={T.mutedDim} style={{ marginTop: 2 }}>
+                Likes on picks don't use your daily likes
+              </Txt>
+            ) : null}
+          </View>
+        ) : (
+        <>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }} contentContainerStyle={{ gap: 8, paddingHorizontal: 18, paddingBottom: 10 }}>
           {DISCOVERY_MODES.map((m) => (
             <Pressable
@@ -230,15 +351,47 @@ export default function DiscoverTab() {
           </Txt>
         </Pressable>
         </View>
+        </>
+        )}
 
-        {view === 'map' ? (
+        {!isPicks && view === 'map' ? (
           <View style={{ flex: 1, paddingHorizontal: 18 }} onLayout={(e) => setAreaH(e.nativeEvent.layout.height)}>
             <MapView profiles={people.filter((p) => !likedIds.has(p.id))} onLike={(p) => like(p)} height={Math.max(300, areaH - 80)} />
           </View>
         ) : (
           <>
             <View style={{ flex: 1, marginTop: 6, marginHorizontal: 18 }} onLayout={(e) => setAreaH(e.nativeEvent.layout.height)}>
-              {!current ? (
+              {!current && isPicks ? (
+                <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderStyle: 'dashed', borderColor: 'rgba(255,255,255,0.16)', borderRadius: 24, gap: 10, paddingHorizontal: 24 }}>
+                  <Sparkles size={26} color={T.amber} />
+                  {picks.loading ? (
+                    <Txt color={T.muted}>Finding today's picks…</Txt>
+                  ) : picks.error ? (
+                    <>
+                      <Txt color={T.muted} center>
+                        {picks.error}
+                      </Txt>
+                      <PrimaryButton small label="Try again" onPress={() => void picks.reload()} />
+                    </>
+                  ) : (
+                    <>
+                      <Txt v="display" size={18} center>
+                        {picks.people.length ? "You're all caught up" : 'No picks right now'}
+                      </Txt>
+                      <Txt size={12.5} color={T.muted} center>
+                        {picks.people.length ? 'Fresh picks arrive every day.' : "We'll look again within the hour."}
+                      </Txt>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                        <Txt size={12} color={T.mutedDim}>
+                          New picks in
+                        </Txt>
+                        <Countdown to={picks.refreshesAt} onDone={picks.reload} size={13} />
+                      </View>
+                      <PrimaryButton small label="Explore more" onPress={() => setTab('explore')} />
+                    </>
+                  )}
+                </View>
+              ) : !current ? (
                 <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderStyle: 'dashed', borderColor: 'rgba(255,255,255,0.16)', borderRadius: 24, gap: 10 }}>
                   <RotateCcw size={26} color={T.muted} />
                   <Txt color={T.muted}>You've seen everyone for now.</Txt>
@@ -300,9 +453,11 @@ export default function DiscoverTab() {
                 <RoundBtn onPress={() => advance('pass')} color={T.mutedDim}>
                   <X size={24} color={T.mutedDim} />
                 </RoundBtn>
-                <RoundBtn onPress={() => setShowFilters(true)} color={T.violet} small>
-                  <SlidersHorizontal size={16} color={T.violet} />
-                </RoundBtn>
+                {isPicks ? null : (
+                  <RoundBtn onPress={() => setShowFilters(true)} color={T.violet} small>
+                    <SlidersHorizontal size={16} color={T.violet} />
+                  </RoundBtn>
+                )}
                 <RoundBtn onPress={() => advance('like')} color={T.rose} big>
                   <Heart size={26} color={T.rose} fill={T.rose} />
                 </RoundBtn>
@@ -408,6 +563,14 @@ const Card = memo(function Card({
           )}
         </View>
         <View style={{ position: 'absolute', bottom: 14, left: 16, right: 16 }}>
+          {p.pickReason ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, alignSelf: 'flex-start', maxWidth: '100%', paddingVertical: 4, paddingHorizontal: 10, borderRadius: 999, backgroundColor: T.chipDark, borderWidth: 1, borderColor: `${T.amber}66`, marginBottom: 6 }}>
+              <Sparkles size={11} color={T.amber} />
+              <Txt w={700} size={11} color={T.amber} numberOfLines={1} style={{ flexShrink: 1 }}>
+                {p.pickReason}
+              </Txt>
+            </View>
+          ) : null}
           {p.superLikedMe || p.boosted ? (
             <View style={{ flexDirection: 'row', gap: 6, marginBottom: 6 }}>
               {p.superLikedMe ? (
@@ -435,6 +598,14 @@ const Card = memo(function Card({
             </Txt>
             {p.verified ? <VerifiedIcon /> : null}
           </View>
+          {p.realPhotos ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 3 }}>
+              <Camera size={11} color={T.mint} />
+              <Txt w={700} size={11} color={T.mint}>
+                Real photos · verified by dates
+              </Txt>
+            </View>
+          ) : null}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
             <MapPin size={12} color="#E4DAF2" />
             <Txt size={12.5} color="#E4DAF2">

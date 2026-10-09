@@ -88,5 +88,6 @@ export function personFromDiscover(me: Me, p: DiscoverProfile): Person {
     boosted: !!p.boosted,
     superLikedMe: !!p.superLikedMe,
     fridayAnswer: p.fridayAnswer ?? null,
+    realPhotos: !!p.realPhotos,
   };
 }
