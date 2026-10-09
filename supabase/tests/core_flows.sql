@@ -197,6 +197,14 @@ begin
   log := log || ' events';
 
   ---------------------------------------------------------------- 7. live
+  -- live needs a complete profile (+ 7-day-old account to host): make these users eligible
+  update public.profiles set bio = coalesce(bio, 'Hello there'), intention = coalesce(intention, 'serious'),
+         created_at = now() - interval '30 days' where id = any(array[a, d]);
+  insert into public.photos (user_id, url, position, is_primary)
+  select x, 'https://t.supabase.co/storage/v1/object/public/profile-photos/' || x || '/1.jpg', 0, true from unnest(array[a, d]) x;
+  insert into public.user_interests (user_id, interest_id)
+  select x, i.id from unnest(array[a, d]) x, (select id from public.interests order by id limit 3) i
+  on conflict do nothing;
   perform set_config('request.jwt.claims', json_build_object('sub', a, 'role', 'authenticated')::text, true);
   set local role authenticated;
   v_stream := public.start_live('Lisbon rooftop chat', 'Talk', b);

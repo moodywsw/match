@@ -42,6 +42,17 @@ export const ownProfile = () => ({
   max_age: 99,
 });
 
+/** Mutable LIVE fixtures so tests can switch eligibility / room type. */
+export const liveMock = {
+  elig: null as null | Record<string, unknown>,
+  roomType: 'standard' as 'standard' | 'speed_dating' | 'question_night',
+  reset() {
+    this.elig = null;
+    this.roomType = 'standard';
+  },
+};
+const ELIGIBLE = { can_watch: true, can_interact: true, missing: [], can_host: true, host_block: null, host_ready_at: null, host_min_days: 7, verified_required: false };
+
 const fixtures: Record<string, () => unknown[]> = {
   'rpc:get_my_profile': () => (state.signedIn ? [ownProfile()] : []),
   'rpc:get_discover_deck': () => [
@@ -51,9 +62,27 @@ const fixtures: Record<string, () => unknown[]> = {
     { id: 'e1', title: 'Sunset mixer', description: 'Drinks', category: 'Nightlife', city: 'Lisbon', venue: 'Rooftop', starts_at: NOW, ends_at: null, capacity: 20, creator_id: OTHER, cover_url: null, going_count: 3, interested_count: 1, my_status: null, lat: null, lng: null, creator_name: 'Bruno', creator_photo: null, attendee_photos: [] },
   ],
   'rpc:get_live_rooms': () => [
-    { id: 'l1', host_id: OTHER, host_name: 'Bruno', guest_id: null, guest_name: null, title: 'Rooftop sunset talk', category: 'Talk', is_live_match: false, started_at: NOW, viewers: 7, reactions: 12, is_mine: false },
+    { id: 'l1', host_id: OTHER, host_name: 'Bruno', guest_id: null, guest_name: null, title: 'Rooftop sunset talk', category: 'Talk', is_live_match: false, started_at: NOW, viewers: 7, reactions: 12, is_mine: false, room_type: liveMock.roomType, question: liveMock.roomType === 'question_night' ? 'What does your perfect Friday night look like?' : null, daters: liveMock.roomType === 'speed_dating' ? 2 : 0 },
   ],
-  'rpc:get_live_state': () => [{ status: 'live', viewers: 8, reactions: 12, yes_votes: 3, no_votes: 1, my_vote: null }],
+  'rpc:get_live_state': () => [
+    {
+      status: 'live', viewers: 8, reactions: 12, yes_votes: 3, no_votes: 1, my_vote: null,
+      room_type: liveMock.roomType,
+      question: liveMock.roomType === 'question_night' ? 'What does your perfect Friday night look like?' : null,
+      comments_muted: false,
+      pinned: liveMock.roomType === 'question_night' ? { id: 'm1', user_id: OTHER, name: 'Bruno', body: 'Sunset at a miradouro' } : null,
+      round_number: liveMock.roomType === 'speed_dating' ? 1 : 0,
+      round_started_at: liveMock.roomType === 'speed_dating' ? new Date(Date.now() - 30_000).toISOString() : null,
+      round_ends_at: liveMock.roomType === 'speed_dating' ? new Date(Date.now() + 150_000).toISOString() : null,
+      round_pair: liveMock.roomType === 'speed_dating' ? [OTHER, 'd2'] : null,
+      stage: [
+        { id: OTHER, name: 'Bruno', role: 'host', seat: 0, liked: false, matched: false },
+        ...(liveMock.roomType === 'speed_dating' ? [{ id: 'd2', name: 'Dina', role: 'dater', seat: 1, liked: false, matched: false }] : []),
+      ],
+      my_status: 'ok',
+      can_interact: liveMock.elig ? liveMock.elig.can_interact !== false : true,
+    },
+  ],
   'rpc:join_live': () => ['viewer'],
   'table:live_messages': () => [{ id: 'm1', stream_id: 'l1', user_id: OTHER, body: 'Welcome everyone!', created_at: NOW }],
   // chat with OTHER (conversation id = OTHER for the /chat/<OTHER> smoke test)
@@ -91,6 +120,8 @@ const scalarFixtures: Record<string, () => unknown> = {
     ],
   }),
   'rpc:mark_we_met': () => ({ me: true, them: false, notified: true }),
+  'rpc:get_live_eligibility': () => liveMock.elig ?? ELIGIBLE,
+  'rpc:like_from_live': () => ({ liked: true, matched: true, match_id: 'mt1', conversation_id: OTHER, name: 'Bruno' }),
 };
 
 /** Every rpc() call the app made (name + args). */

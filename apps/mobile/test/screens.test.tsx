@@ -7,7 +7,7 @@ import { act, fireEvent } from '@testing-library/react-native';
 import { renderRouter } from 'expo-router/testing-library';
 import path from 'path';
 
-import { authCalls, OTHER, rpcCalls, state } from './supabaseMock';
+import { authCalls, liveMock, OTHER, rpcCalls, state } from './supabaseMock';
 
 const APP_DIR = path.resolve(__dirname, '../app');
 
@@ -188,6 +188,109 @@ describe('live rooms (Expo Go runtime)', () => {
     });
     await settle();
     expect(view.getAllByText(/Go Live|Start/).length).toBeGreaterThan(1);
+    expect(errors).toEqual([]);
+  });
+});
+
+describe('live, reshaped for dating', () => {
+  beforeEach(() => {
+    state.signedIn = true;
+    state.onboarded = true;
+    liveMock.reset();
+    rpcCalls.length = 0;
+  });
+  afterAll(() => liveMock.reset());
+  async function settle() {
+    for (let i = 0; i < 6; i++) {
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(50);
+      });
+    }
+  }
+  async function openRoom() {
+    const view = await open('/live');
+    await act(async () => {
+      fireEvent.press(view.getByText('Rooftop sunset talk'));
+    });
+    await settle();
+    return view;
+  }
+
+  test('watching is open, but an incomplete profile cannot comment or gift', async () => {
+    liveMock.elig = { can_watch: true, can_interact: false, missing: ['photo', 'interests'], can_host: false, host_block: 'profile_incomplete', host_ready_at: null, host_min_days: 7, verified_required: false };
+    const view = await openRoom();
+    expect(view.getByText(/Welcome everyone!/)).toBeTruthy();
+    expect(view.getByPlaceholderText('Complete your profile to comment')).toBeTruthy();
+    expect(view.getByText(/Add a photo and 3 interests to comment and send gifts/)).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(view.getByLabelText('Send a gift'));
+    });
+    await settle();
+    expect(view.queryByText('Send Bruno a gift')).toBeNull();
+    expect(errors).toEqual([]);
+  });
+
+  test('like the host from the stage -> MATCH moment', async () => {
+    const view = await openRoom();
+    await act(async () => {
+      fireEvent.press(view.getByLabelText('Like Bruno'));
+    });
+    await settle();
+    const call = rpcCalls.find((c) => c.fn === 'like_from_live');
+    expect(call?.args).toEqual({ p_stream_id: 'l1', p_target: OTHER });
+    expect(view.getAllByText('MATCH!').length).toBeGreaterThan(0);
+    expect(errors).toEqual([]);
+  });
+
+  test('Go Live explains why a new account cannot host yet', async () => {
+    liveMock.elig = { can_watch: true, can_interact: true, missing: [], can_host: false, host_block: 'account_too_new', host_ready_at: '2026-10-15T10:00:00Z', host_min_days: 7, verified_required: false };
+    const view = await open('/live');
+    await settle();
+    await act(async () => {
+      fireEvent.press(view.getAllByText('Go Live')[0]);
+    });
+    await settle();
+    expect(view.getByText(/Hosting opens once your account is 7 days old — from 15 Oct/)).toBeTruthy();
+    expect(view.queryByText('Start streaming')).toBeNull();
+    expect(errors).toEqual([]);
+  });
+
+  test('Go Live offers the themed formats', async () => {
+    const view = await open('/live');
+    await settle();
+    await act(async () => {
+      fireEvent.press(view.getAllByText('Go Live')[0]);
+    });
+    await settle();
+    expect(view.getAllByText(/Speed dating$/).length).toBeGreaterThan(0);
+    const qotn = view.getAllByText(/Question of the night$/);
+    await act(async () => {
+      fireEvent.press(qotn[qotn.length - 1]);
+    });
+    expect(view.getByDisplayValue('What does your perfect Friday night look like?')).toBeTruthy();
+    expect(errors).toEqual([]);
+  });
+
+  test('speed dating room shows the badge, the round and the timer', async () => {
+    liveMock.roomType = 'speed_dating';
+    const view = await open('/live');
+    expect(view.getAllByText('⚡ SPEED DATING').length).toBeGreaterThan(0);
+    await act(async () => {
+      fireEvent.press(view.getByText('Rooftop sunset talk'));
+    });
+    await settle();
+    expect(view.getByText('Round 1')).toBeTruthy();
+    expect(view.getByText(/Bruno 💬 Dina are on a 3-minute date/)).toBeTruthy();
+    expect(view.getByText(/^2:[0-5]\d$/)).toBeTruthy();
+    expect(errors).toEqual([]);
+  });
+
+  test('question of the night shows the question and the pinned answer', async () => {
+    liveMock.roomType = 'question_night';
+    const view = await openRoom();
+    expect(view.getAllByText('What does your perfect Friday night look like?').length).toBeGreaterThan(0);
+    expect(view.getByText(/Sunset at a miradouro/)).toBeTruthy();
+    expect(view.getByPlaceholderText('Your answer…')).toBeTruthy();
     expect(errors).toEqual([]);
   });
 });

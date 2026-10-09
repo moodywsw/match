@@ -1,7 +1,9 @@
-import { useState } from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useState } from 'react';
+import { Alert, Pressable, ScrollView, View } from 'react-native';
 import { Radio, Users } from 'lucide-react-native';
 
+import { RoomTypeBadge } from '@/components/app/LiveDating';
 import { GoLiveSheet, LiveRoomView } from '@/components/app/LiveRoom';
 import { Screen } from '@/components/app/Screen';
 import { DarkPill, FadeUp, LiveBadge, Photo } from '@/components/ui/primitives';
@@ -9,16 +11,25 @@ import { Txt } from '@/components/ui/Txt';
 import { T } from '@/constants/theme';
 import { useApp } from '@/contexts/AppContext';
 import { useLiveRooms } from '@/hooks/useLiveRooms';
-import { liveErrorMessage, startLive } from '@/lib/live';
+import { fetchLiveEligibility, liveErrorMessage, startLive, type LiveEligibility } from '@/lib/live';
 import { LIVE_CAT_LABEL, LIVE_CATS, type LiveRoom } from '@/lib/mock';
 
 export default function LiveTab() {
-  const { me, toast } = useApp();
+  const { me } = useApp();
   const [cat, setCat] = useState('Trending');
   const [showGoLive, setShowGoLive] = useState(false);
   const [starting, setStarting] = useState(false);
   const [room, setRoom] = useState<LiveRoom | null>(null);
   const { rooms: filtered, reload } = useLiveRooms(cat);
+  const router = useRouter();
+  const [elig, setElig] = useState<LiveEligibility | null>(null);
+  useFocusEffect(
+    useCallback(() => {
+      fetchLiveEligibility()
+        .then(setElig)
+        .catch(() => setElig(null));
+    }, [])
+  );
 
   return (
     <Screen>
@@ -58,6 +69,11 @@ export default function LiveTab() {
                   <Users size={10} color={T.text} />
                   <Txt size={10}>{r.viewers}</Txt>
                 </DarkPill>
+                {r.roomType && r.roomType !== 'standard' ? (
+                  <View style={{ position: 'absolute', bottom: 8, left: 8 }}>
+                    <RoomTypeBadge type={r.roomType} small />
+                  </View>
+                ) : null}
                 {r.liveMatch ? (
                   <View style={{ position: 'absolute', bottom: 8, left: 8, backgroundColor: T.violet, borderRadius: 8, paddingVertical: 3, paddingHorizontal: 8 }}>
                     <Txt w={700} size={10.5} color="#fff">
@@ -70,10 +86,16 @@ export default function LiveTab() {
                 <Txt w={700} size={12} numberOfLines={1}>
                   {r.title}
                 </Txt>
-                <Txt size={10.5} color={T.muted} style={{ marginTop: 3 }}>
+                <Txt size={10.5} color={T.muted} style={{ marginTop: 3 }} numberOfLines={1}>
                   {r.host?.name}
                   {r.guest ? ` & ${r.guest.name}` : ''}
+                  {r.roomType === 'speed_dating' ? ` · ${(r.daters ?? 0) + 1}/4 on stage` : ''}
                 </Txt>
+                {r.roomType === 'question_night' && r.question ? (
+                  <Txt size={10.5} color={T.text} style={{ marginTop: 3 }} numberOfLines={2}>
+                    🌙 {r.question}
+                  </Txt>
+                ) : null}
               </View>
             </Pressable>
           ))}
@@ -84,10 +106,15 @@ export default function LiveTab() {
         visible={showGoLive}
         onClose={() => setShowGoLive(false)}
         busy={starting}
-        onStart={async (title, category, guest) => {
+        eligibility={elig}
+        onFixProfile={() => {
+          setShowGoLive(false);
+          router.push('/profile');
+        }}
+        onStart={async (title, category, guest, roomType, question) => {
           setStarting(true);
           try {
-            const id = await startLive(title, category, guest?.id ?? null);
+            const id = await startLive(title, category, guest?.id ?? null, roomType, question);
             setShowGoLive(false);
             const next: LiveRoom = {
               id,
@@ -99,6 +126,8 @@ export default function LiveTab() {
               guest: guest ? { name: guest.name, photo: guest.photo } : undefined,
               guestId: guest?.id ?? null,
               liveMatch: !!guest,
+              roomType,
+              question,
               cover: me?.photo ?? null,
               viewers: 0,
               reactions: 0,
@@ -106,7 +135,8 @@ export default function LiveTab() {
             };
             setTimeout(() => setRoom(next), 350);
           } catch (e) {
-            toast(liveErrorMessage(e));
+            // The Go Live sheet is a modal, so the app toast would sit underneath it.
+            Alert.alert("Couldn't go live", liveErrorMessage(e));
           } finally {
             setStarting(false);
           }

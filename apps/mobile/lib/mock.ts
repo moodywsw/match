@@ -255,13 +255,18 @@ export type LiveRoom = {
   hostId?: string;
   guestId?: string | null;
   reactions?: number;
+  /** Themed rooms: 'speed_dating' | 'question_night' (badges + room UI). */
+  roomType?: 'standard' | 'speed_dating' | 'question_night';
+  question?: string | null;
+  daters?: number;
 };
 
 export const LIVE_ROOMS: LiveRoom[] = [
-  { id: 'live-1', title: 'Friday Night Speed Dating', host: PROFILES[3], category: 'Dating', viewers: 482, cover: avatar(23, 500) },
+  { id: 'live-1', title: 'Friday Night Speed Dating', host: PROFILES[3], category: 'Dating', viewers: 482, cover: avatar(23, 500), roomType: 'speed_dating', daters: 3 },
   { id: 'live-2', title: 'House music til 2am 🎧', host: PROFILES[6], category: 'Music', viewers: 921, cover: avatar(41, 500) },
   { id: 'live-3', title: 'Roast my dating profile', host: PROFILES[8], category: 'Entertainment', viewers: 356, cover: avatar(19, 500) },
   { id: 'live-4', title: 'Late night talk: red flags', host: PROFILES[11], category: 'Talk', viewers: 210, cover: avatar(58, 500) },
+  { id: 'live-7', title: 'Question of the night', host: PROFILES[2], category: 'Dating', viewers: 318, cover: avatar(26, 500), roomType: 'question_night', question: 'What does your perfect Friday night look like?' },
   { id: 'live-5', title: 'Ranked grind, come chat', host: PROFILES[14], category: 'Gaming', viewers: 640, cover: avatar(12, 500) },
   { id: 'live-6', title: 'LIVE MATCH: Rui & Ines', category: 'Dating', viewers: 1204, cover: avatar(30, 500), liveMatch: true, host: PROFILES[6], guest: PROFILES[5] },
 ];

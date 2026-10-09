@@ -30,6 +30,9 @@ export function useLiveRooms(category: string = 'Trending') {
           guest: r.guest_id ? { name: r.guest_name || 'Guest', photo: r.guest_photo } : undefined,
           liveMatch: r.is_live_match,
           isSelf: r.is_mine,
+          roomType: r.room_type ?? 'standard',
+          question: r.question ?? null,
+          daters: r.daters ?? 0,
         }))
       );
     } catch {

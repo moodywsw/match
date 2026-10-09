@@ -18,6 +18,8 @@ begin
     (a, 'Ana', 'serious', null), (b, 'Bruno', 'serious', 'Sunset at Miradouro'), (c, 'Carla', 'casual', null),
     (d, 'Duarte', null, null), (e, 'Eva', null, null), (f, 'Filipe', null, null), (h, 'Helena', null, null),
     (t, 'Tiago', null, null), (r1, 'Rita', null, null), (r2, 'Rui', null, null), (r3, 'Rosa', null, null)) v(u, nm, it, fr);
+  -- isolate from any real / seeded profiles already in the project (rolled back with the test)
+  update public.profiles set is_discoverable = false where id <> all(array[a, b, c, d, e, f, h, t, r1, r2, r3]);
   insert into public.user_interests (user_id, interest_id)
   select u, i.id from unnest(array[a, b]) u, public.interests i where i.label in ('Jazz', 'Sushi');
   insert into public.blocks (blocker_id, blocked_id) values (e, a);           -- e blocked a
