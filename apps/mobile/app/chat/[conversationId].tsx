@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ImageBubble, RecordingBar, StaticVoiceBubble, useVoiceRecorder, VoiceBubble } from '@/components/app/ChatMedia';
 import { SafetySheet } from '@/components/app/DiscoverParts';
+import { ChatMenuSheet, DateCard, DateFeedbackSheet, DateSafetySheet, ExpiringBanner, StartersCard, VideoSuggestCard } from '@/components/app/MatchLife';
 import { Avatar, Backdrop, DemoTag, IconBtn } from '@/components/ui/primitives';
 import { Txt } from '@/components/ui/Txt';
 import { T, body } from '@/constants/theme';
@@ -18,10 +19,15 @@ import { callDurationLabel, type CallKind } from '@/lib/calls';
 import { fetchConversationMeta, fetchMessages, joinTypingChannel, markConversationRead, sendMediaMessage, sendMessage, subscribeToMessages, type ChatMessage } from '@/lib/chat';
 import { computeCompat } from '@/lib/compat';
 import { fetchInterestLabelsForUsers } from '@/lib/interests';
+import { extendMatch, fetchDateState, fetchLifecycle, fetchStarters, markWeMet, submitDateFeedback, type DateState, type Lifecycle } from '@/lib/matchLife';
 import { avatar, CHAT_PREVIEWS, intentionLabel, PROFILES } from '@/lib/mock';
+import { scheduleDateCheckIn } from '@/lib/notifications';
 import { pushLatestNotification } from '@/lib/push';
 import { blockUser, reportUser } from '@/lib/safety';
 import { friendlyError } from '@/lib/errors';
+import * as SecureStore from 'expo-secure-store';
+
+const NUDGE_AFTER_MS = 24 * 3600_000;
 
 type Msg = {
   id: string;
@@ -173,7 +179,7 @@ function Bubble({ m }: { m: Msg }) {
 }
 
 export default function ChatScreen() {
-  const { conversationId } = useLocalSearchParams<{ conversationId: string }>();
+  const { conversationId, focus } = useLocalSearchParams<{ conversationId: string; focus?: string }>();
   const isDemo = !!conversationId?.startsWith('demo-');
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -187,6 +193,16 @@ export default function ChatScreen() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [safetyOpen, setSafetyOpen] = useState(false);
+  const [matchId, setMatchId] = useState<string | null>(null);
+  const [life, setLife] = useState<Lifecycle | null>(null);
+  const [starters, setStarters] = useState<string[]>([]);
+  const [dateState, setDateState] = useState<DateState | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [dateSafetyOpen, setDateSafetyOpen] = useState(false);
+  const [extending, setExtending] = useState(false);
+  const [videoDismissed, setVideoDismissed] = useState(true);
+  const focusDone = useRef(false);
   const listRef = useRef<FlatList<Msg>>(null);
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const typingChannel = useRef<{ ping: () => void; leave: () => void } | null>(null);
@@ -241,6 +257,7 @@ export default function ChatScreen() {
         if (cancelled) return;
         setMessages(msgs.map(toMsg));
         if (meta) {
+          setMatchId(meta.matchId);
           const labels = await fetchInterestLabelsForUsers([meta.otherUserId]).catch(() => ({}) as Record<string, string[]>);
           const theirs = labels[meta.otherUserId] ?? [];
           const c = computeCompat({ id: user.id, interests: me?.interests ?? [], intention: profile?.intention ?? null }, { id: meta.otherUserId, interests: theirs, intention: meta.otherIntention });
@@ -425,11 +442,114 @@ export default function ChatScreen() {
     (kind: CallKind) => {
       if (isDemo) return toast('Calls work with your real matches');
       if (!peer || !conversationId) return;
+      if (life?.state === 'expired') return toast('This match expired — the chat is archived');
       void placeCall(conversationId, { id: peer.id, name: peer.name, photo: peer.photo }, kind);
     },
-    [isDemo, peer, conversationId, placeCall, toast]
+    [isDemo, peer, conversationId, placeCall, toast, life?.state]
   );
   const renderMessage = useCallback(({ item }: { item: Msg }) => <MessageRow m={item} onCall={call} />, [call]);
+
+  /* ---------- chats that don't die + dates ---------- */
+  const refreshLife = useCallback(async () => {
+    if (!matchId || !user?.id) return;
+    try {
+      setLife(await fetchLifecycle(matchId, user.id));
+    } catch (e) {
+      console.warn('[match] lifecycle failed', e);
+    }
+  }, [matchId, user?.id]);
+  useEffect(() => {
+    if (!matchId || !user?.id) return;
+    void refreshLife();
+    fetchDateState(matchId, user.id)
+      .then(setDateState)
+      .catch((e) => console.warn('[match] date state failed', e));
+    SecureStore.getItemAsync(`match.videoSuggest.${matchId}`)
+      .then((v) => setVideoDismissed(v === '1'))
+      .catch(() => setVideoDismissed(false));
+  }, [matchId, user?.id, refreshLife]);
+  // New messages (mine or theirs) can revive an expiring match / unlock the video suggestion.
+  const lastMsgId = messages[messages.length - 1]?.id;
+  useEffect(() => {
+    if (lastMsgId && !lastMsgId.startsWith('tmp-')) void refreshLife();
+  }, [lastMsgId, refreshLife]);
+
+  const hasRealMessages = messages.some((m) => m.type !== 'call');
+  const nudgeDue = !!life && life.state !== 'expired' && !hasRealMessages && (!!life.nudgedAt || Date.now() - new Date(life.matchedAt).getTime() > NUDGE_AFTER_MS);
+  useEffect(() => {
+    if (!nudgeDue || !conversationId || starters.length) return;
+    fetchStarters(conversationId)
+      .then(setStarters)
+      .catch((e) => console.warn('[match] starters failed', e));
+  }, [nudgeDue, conversationId, starters.length]);
+
+  const expired = life?.state === 'expired';
+  const showVideo =
+    !!life?.videoSuggestedAt && !videoDismissed && !expired && !messages.some((m) => m.type === 'call' && !!m.at && m.at > life.videoSuggestedAt!);
+
+  // Opened from a "We met" / feedback notification → bring up the right card.
+  useEffect(() => {
+    if (focus !== 'date' || !dateState || focusDone.current) return;
+    focusDone.current = true;
+    if (dateState.iMarked && !dateState.feedbackDone) setFeedbackOpen(true);
+  }, [focus, dateState]);
+
+  const openAfterMenu = (fn: () => void) => {
+    setMenuOpen(false);
+    setTimeout(fn, 280);
+  };
+
+  const doExtend = async () => {
+    if (!matchId || extending) return;
+    setExtending(true);
+    try {
+      const until = await extendMatch(matchId);
+      setLife((l) => (l ? { ...l, expiresAt: until, extendedByMe: true } : l));
+      toast('Extended — you have 48 more hours ⏳');
+      void pushLatestNotification(peer?.id);
+    } catch (err) {
+      toast(friendlyError(err, 'Could not extend — try again'));
+      void refreshLife();
+    } finally {
+      setExtending(false);
+    }
+  };
+
+  const doWeMet = async () => {
+    if (!matchId) return;
+    try {
+      const r = await markWeMet(matchId);
+      setDateState((d) => ({ iMarked: true, theyMarked: r.them || !!d?.theyMarked, feedbackDone: !!d?.feedbackDone }));
+      setLife((l) => (l && l.state === 'expiring' ? { ...l, state: 'active', expiresAt: null } : l));
+      if (r.notified && !r.them) void pushLatestNotification(peer?.id);
+      toast('Noted 💛 Share private feedback whenever you’re ready');
+    } catch (err) {
+      toast(friendlyError(err, 'Could not save — try again'));
+    }
+  };
+
+  const dismissVideo = () => {
+    setVideoDismissed(true);
+    if (matchId) SecureStore.setItemAsync(`match.videoSuggest.${matchId}`, '1').catch(() => {});
+  };
+
+  const footer = (
+    <View>
+      {typing ? <TypingDots /> : null}
+      {nudgeDue ? <StartersCard name={peer?.name ?? 'them'} starters={starters} onPick={setInput} /> : null}
+      {showVideo ? <VideoSuggestCard name={peer?.name ?? 'them'} onCall={() => call('video')} onDismiss={dismissVideo} /> : null}
+      {dateState ? (
+        <DateCard
+          name={peer?.name ?? 'them'}
+          iMarked={dateState.iMarked}
+          theyMarked={dateState.theyMarked}
+          feedbackDone={dateState.feedbackDone}
+          onConfirm={() => void doWeMet()}
+          onFeedback={() => setFeedbackOpen(true)}
+        />
+      ) : null}
+    </View>
+  );
 
   const header = useMemo(
     () => (
@@ -492,11 +612,14 @@ export default function ChatScreen() {
             </>
           ) : null}
           {!isDemo ? (
-            <IconBtn size={32} onPress={() => setSafetyOpen(true)}>
+            <IconBtn size={32} label="More" onPress={() => setMenuOpen(true)}>
               <MoreHorizontal size={16} color={T.text} />
             </IconBtn>
           ) : null}
         </View>
+        {life && (life.state === 'expiring' || life.state === 'expired') ? (
+          <ExpiringBanner life={life} name={peer?.name ?? 'them'} busy={extending} onExtend={() => void doExtend()} />
+        ) : null}
 
         <FlatList
           ref={listRef}
@@ -508,7 +631,7 @@ export default function ChatScreen() {
           initialNumToRender={20}
           maxToRenderPerBatch={12}
           windowSize={11}
-          ListFooterComponent={typing ? <TypingDots /> : null}
+          ListFooterComponent={footer}
           ListEmptyComponent={
             <Txt size={13} color={T.mutedDim} center style={{ marginTop: 30 }}>
               You matched! Say hi 👋
@@ -520,7 +643,13 @@ export default function ChatScreen() {
         />
 
         <View style={{ flexDirection: 'row', gap: 8, paddingTop: 10, paddingHorizontal: 4, paddingBottom: Math.max(insets.bottom, 12), alignItems: 'center' }}>
-          {voice.active ? (
+          {expired ? (
+            <View style={{ flex: 1, paddingVertical: 12, alignItems: 'center' }}>
+              <Txt size={12.5} color={T.mutedDim}>
+                This chat is archived
+              </Txt>
+            </View>
+          ) : voice.active ? (
             <RecordingBar durationMs={voice.durationMs} levels={voice.levels} sending={voiceSending} onCancel={() => void voice.cancel()} onSend={finishVoice} />
           ) : (
             <>
@@ -552,6 +681,44 @@ export default function ChatScreen() {
         </View>
       </View>
 
+      <ChatMenuSheet
+        visible={menuOpen}
+        name={peer?.name ?? ''}
+        iMarked={!!dateState?.iMarked}
+        feedbackDone={!!dateState?.feedbackDone}
+        onClose={() => setMenuOpen(false)}
+        onWeMet={() => {
+          setMenuOpen(false);
+          void doWeMet();
+        }}
+        onFeedback={() => openAfterMenu(() => setFeedbackOpen(true))}
+        onDateSafety={() => openAfterMenu(() => setDateSafetyOpen(true))}
+        onSafety={() => openAfterMenu(() => setSafetyOpen(true))}
+      />
+      <DateFeedbackSheet
+        visible={feedbackOpen}
+        name={peer?.name ?? 'them'}
+        onClose={() => setFeedbackOpen(false)}
+        onSubmit={async (f) => {
+          if (!matchId) return;
+          try {
+            await submitDateFeedback(matchId, f);
+            setDateState((d) => (d ? { ...d, feedbackDone: true } : d));
+            setFeedbackOpen(false);
+            toast(f.feltSafe && f.lookedLikePhotos !== 'no' ? 'Thanks — that stays between you and MATCH 💛' : 'Thank you. Our safety team will review this.');
+          } catch (err) {
+            toast(friendlyError(err, 'Could not send — try again'));
+          }
+        }}
+      />
+      <DateSafetySheet
+        visible={dateSafetyOpen}
+        name={peer?.name ?? 'my match'}
+        age={null}
+        photo={peer?.photo ?? null}
+        onClose={() => setDateSafetyOpen(false)}
+        onReminder={(h) => scheduleDateCheckIn(peer?.name ?? 'your date', h, conversationId ?? null)}
+      />
       <SafetySheet
         person={safetyOpen && peer ? { name: peer.name } : null}
         onClose={() => setSafetyOpen(false)}

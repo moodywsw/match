@@ -69,16 +69,39 @@ const fixtures: Record<string, () => unknown[]> = {
     { product_id: 'coins_1200', coins: 1200, sort: 3 },
   ],
   'table:wallets': () => [{ coins: 42, diamonds: 7 }],
+  // chats that don't die: the match with OTHER went quiet and is expiring
+  'table:match_lifecycle': () => [
+    { match_id: 'mt1', user_a: ME, user_b: OTHER, state: 'expiring', matched_at: '2026-10-01T12:00:00Z', last_message_at: null, expires_at: new Date(Date.now() + 30 * 3600_000).toISOString(), extended_a_at: null, extended_b_at: null, video_suggested_at: null, nudged_at: '2026-10-02T12:00:00Z' },
+  ],
+  'rpc:get_conversation_starters': () => ["What's the last jazz song you had on repeat? 🎧", 'Your perfect Friday is “Beach” — what would make it a 10/10?'],
+  'rpc:get_trust_badges': () => [{ user_id: OTHER, real_photos: true }],
   'table:posts': () => [
     { id: 'p1', user_id: OTHER, type: 'text', content: 'Best pastel de nata?', media_url: null, poll_options: null, created_at: NOW, like_count: 2, comment_count: 1 },
   ],
 };
+
+/** RPCs that return a single JSON value (not rows). */
+const scalarFixtures: Record<string, () => unknown> = {
+  'rpc:get_daily_picks': () => ({
+    pick_date: '2026-10-08',
+    refreshes_at: new Date(Date.now() + 5 * 3600_000).toISOString(),
+    quota: 7,
+    picks: [
+      { id: OTHER, name: 'Bruno', birth_date: '1994-07-01', city: 'Lisbon', bio: 'Surf', intention: 'serious', verified: true, friday_answer: 'Beach', distance_km: 3, super_liked_me: false, reason: 'You both love jazz and sushi', rank: 1, acted: null },
+    ],
+  }),
+  'rpc:mark_we_met': () => ({ me: true, them: false, notified: true }),
+};
+
+/** Every rpc() call the app made (name + args). */
+export const rpcCalls: { fn: string; args: unknown }[] = [];
 
 type Result = { data: unknown; error: null; count?: number };
 
 function builder(key: string) {
   let single = false;
   const resolve = (): Result => {
+    if (scalarFixtures[key]) return { data: scalarFixtures[key](), error: null };
     const rows = fixtures[key]?.() ?? [];
     return single ? { data: rows[0] ?? null, error: null } : { data: rows, error: null, count: rows.length };
   };
@@ -119,7 +142,10 @@ const session = () =>
 
 export const supabase = {
   from: (table: string) => builder(`table:${table}`),
-  rpc: (fn: string) => builder(`rpc:${fn}`),
+  rpc: (fn: string, args?: unknown) => {
+    rpcCalls.push({ fn, args });
+    return builder(`rpc:${fn}`);
+  },
   channel: () => channel(),
   removeChannel: async () => 'ok',
   functions: { invoke: async () => ({ data: null, error: null }) },

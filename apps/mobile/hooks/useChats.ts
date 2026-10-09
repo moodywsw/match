@@ -22,6 +22,8 @@ export type ChatRow = {
   demo: boolean;
   /** SUPER MATCH first message awaiting my reply — pinned to the top with a badge. */
   priority: boolean;
+  lifeState: 'active' | 'expiring' | 'expired';
+  expiresAt: string | null;
 };
 
 function ago(iso: string | null) {
@@ -75,10 +77,13 @@ export function useChats() {
       unread: c.priority || c.unreadCount > 0,
       demo: false,
       priority: c.priority,
+      lifeState: c.lifeState,
+      expiresAt: c.expiresAt,
     };
   });
-  // Stable: priority conversations first, otherwise keep match order.
-  realRows.sort((a, b) => Number(b.priority) - Number(a.priority));
+  // Stable: priority first, expiring next (they need attention), expired (archived) last.
+  const weight = (r: ChatRow) => (r.lifeState === 'expired' ? -1 : r.priority ? 2 : r.lifeState === 'expiring' ? 1 : 0);
+  realRows.sort((a, b) => weight(b) - weight(a));
 
   const demoRows: ChatRow[] = SHOW_DEMO_CONTENT
     ? demoMatchedIds
@@ -97,6 +102,8 @@ export function useChats() {
           unread: i < 2,
           demo: true,
           priority: false,
+          lifeState: 'active' as const,
+          expiresAt: null,
         }))
     : [];
 

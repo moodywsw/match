@@ -12,9 +12,18 @@ export async function openNotificationTarget(router: Router, type: string | unde
   const str = (k: string) => (typeof data[k] === 'string' && (data[k] as string).length ? (data[k] as string) : null);
   switch (type) {
     case 'message':
-    case 'missed_call': {
+    case 'missed_call':
+    case 'chat_nudge':
+    case 'match_expiring':
+    case 'match_expired':
+    case 'match_extended':
+    case 'we_met':
+    case 'date_feedback':
+    case 'date_checkin': {
       const id = str('conversation_id');
-      if (id) return router.push({ pathname: '/chat/[conversationId]', params: { conversationId: id } });
+      // "We met" / feedback prompts open the chat with the date sheet up.
+      const focus = type === 'we_met' || type === 'date_feedback' ? { focus: 'date' } : {};
+      if (id) return router.push({ pathname: '/chat/[conversationId]', params: { conversationId: id, ...focus } });
       return router.navigate('/(tabs)/messages');
     }
     case 'match': {

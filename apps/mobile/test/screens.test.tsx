@@ -7,7 +7,7 @@ import { act, fireEvent } from '@testing-library/react-native';
 import { renderRouter } from 'expo-router/testing-library';
 import path from 'path';
 
-import { authCalls, OTHER, state } from './supabaseMock';
+import { authCalls, OTHER, rpcCalls, state } from './supabaseMock';
 
 const APP_DIR = path.resolve(__dirname, '../app');
 
@@ -257,6 +257,76 @@ describe('wallet + gifts (Expo Go runtime)', () => {
     expect(view.getByText('Send Bruno a gift')).toBeTruthy();
     expect(view.getByText('Crown')).toBeTruthy();
     expect(view.getByText('42 coins')).toBeTruthy();
+    expect(errors).toEqual([]);
+  });
+});
+
+describe('differentiators', () => {
+  beforeEach(() => {
+    state.signedIn = true;
+    state.onboarded = true;
+    rpcCalls.length = 0;
+  });
+  async function settle() {
+    for (let i = 0; i < 8; i++) {
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(50);
+      });
+    }
+  }
+
+  test("Discover opens on Today's picks with the why-line, trust badge and countdown", async () => {
+    const view = await open('/discover');
+    await settle();
+    expect(view.getByText("Today's picks")).toBeTruthy();
+    expect(view.getByText('You both love jazz and sushi')).toBeTruthy();
+    expect(view.getByText('Real photos · verified by dates')).toBeTruthy();
+    expect(view.getByText(/1 of 7 left/)).toBeTruthy();
+    expect(view.getAllByText(/^0[45]:\d\d:\d\d$/).length).toBeGreaterThan(0);
+    const call = rpcCalls.find((c) => c.fn === 'get_daily_picks');
+    expect(call).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(view.getByText('Explore more'));
+    });
+    // Bruno is an open pick, so Explore doesn't show him twice.
+    expect(view.queryByText('You both love jazz and sushi')).toBeNull();
+    expect(errors).toEqual([]);
+  });
+
+  test('quiet chat shows the expiring timer, Extend, starters, and the We met flow', async () => {
+    const view = await open(`/chat/${OTHER}`);
+    await settle();
+    expect(view.getByText('Match expiring')).toBeTruthy();
+    expect(view.getByText('Extend 48h')).toBeTruthy();
+    expect(view.getByText(/last jazz song/)).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(view.getByText('Extend 48h'));
+    });
+    await settle();
+    expect(rpcCalls.some((c) => c.fn === 'extend_match')).toBe(true);
+    await act(async () => {
+      fireEvent.press(view.getByLabelText('More'));
+    });
+    expect(view.getByText('Date safety')).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(view.getByText('We met 💛'));
+    });
+    await settle();
+    expect(rpcCalls.some((c) => c.fn === 'mark_we_met')).toBe(true);
+    expect(view.getByText('Share private feedback')).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(view.getByText('Share private feedback'));
+    });
+    expect(view.getByText('Private date feedback')).toBeTruthy();
+    expect(view.getByText(/look like their photos/)).toBeTruthy();
+    expect(errors).toEqual([]);
+  });
+
+  test('Messages shows the expiry timer on a quiet match', async () => {
+    const view = await open('/messages');
+    await settle();
+    expect(view.getByText('Bruno')).toBeTruthy();
+    expect(view.getAllByText(/^(29|30)h \d\dm$/).length).toBe(1);
     expect(errors).toEqual([]);
   });
 });

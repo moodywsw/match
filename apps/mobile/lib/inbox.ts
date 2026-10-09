@@ -12,7 +12,13 @@ export type NotificationType =
   | 'event_update'
   | 'event_cancelled'
   | 'missed_call'
-  | 'gift';
+  | 'gift'
+  | 'chat_nudge'
+  | 'match_expiring'
+  | 'match_expired'
+  | 'match_extended'
+  | 'we_met'
+  | 'date_feedback';
 
 export type InboxItem = {
   id: string;
@@ -132,6 +138,17 @@ export function inboxIcon(type: NotificationType): string {
       return '📞';
     case 'gift':
       return '🎁';
+    case 'chat_nudge':
+      return '👋';
+    case 'match_expiring':
+    case 'match_extended':
+      return '⏳';
+    case 'match_expired':
+      return '🗂️';
+    case 'we_met':
+      return '💛';
+    case 'date_feedback':
+      return '📝';
     default:
       return '🔔';
   }
@@ -172,6 +189,18 @@ export function inboxText(n: InboxItem): string {
       return `Missed ${n.payload.kind === 'audio' ? 'voice' : 'video'} call from ${n.actorName} — tap to call back`;
     case 'gift':
       return `${n.actorName} sent you a gift 🎁`;
+    case 'chat_nudge':
+      return `Say hi to ${n.actorName} — we've got a few conversation starters for you`;
+    case 'match_expiring':
+      return `Your match with ${n.actorName} is expiring — send a message or extend it`;
+    case 'match_expired':
+      return `Your match with ${n.actorName} expired — it's archived in Messages`;
+    case 'match_extended':
+      return `${n.actorName} extended your match ⏳ — say hi!`;
+    case 'we_met':
+      return `${n.actorName} says you met 💛 — confirm and share private feedback`;
+    case 'date_feedback':
+      return `How was your date with ${n.actorName}? Your feedback is private`;
     default:
       return 'New notification';
   }

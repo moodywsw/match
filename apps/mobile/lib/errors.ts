@@ -21,6 +21,12 @@ const CODES: Record<string, string> = {
   insufficient_coins: 'Not enough coins — top up in your wallet',
   busy: 'They’re on another call — try again in a bit',
   call_ended: 'This call has ended',
+  match_expired: 'This match expired — the chat is archived',
+  already_extended: 'You already extended this match once',
+  not_expiring: "This match isn't expiring",
+  mark_met_first: 'Tap “We met” first',
+  already_submitted: 'You already shared feedback for this date',
+  invalid_feedback: 'Please answer each question',
 };
 
 const TECHNICAL = /violates|relation|column|function|syntax|permission denied|duplicate key|null value|invalid input|PGRST|JWT|jwt|schema|constraint|operator|uuid|SQLSTATE|FetchError|TypeError|undefined|null is not|Cannot read/i;

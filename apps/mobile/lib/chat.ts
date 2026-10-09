@@ -15,6 +15,9 @@ export type ChatListItem = {
   priority: boolean;
   /** Messages from them newer than my last read (public.conversation_reads). */
   unreadCount: number;
+  /** Chats that don't die: active / expiring (with timer) / expired (archived). */
+  lifeState: 'active' | 'expiring' | 'expired';
+  expiresAt: string | null;
 };
 
 export type ChatMessage = {
@@ -68,7 +71,7 @@ export async function fetchChatList(userId: string): Promise<ChatListItem[]> {
     m.user_a === userId ? m.user_b : m.user_a
   );
 
-  const [{ data: profiles }, photos, { data: conversations }] = await Promise.all([
+  const [{ data: profiles }, photos, { data: conversations }, { data: lifeRows }] = await Promise.all([
     supabase.from('profiles').select('id, name').in('id', otherIds),
     fetchPrimaryPhotos(otherIds),
     supabase
@@ -78,7 +81,15 @@ export async function fetchChatList(userId: string): Promise<ChatListItem[]> {
         'match_id',
         matches.map((m) => m.id)
       ),
+    supabase
+      .from('match_lifecycle')
+      .select('match_id, state, expires_at')
+      .in(
+        'match_id',
+        matches.map((m) => m.id)
+      ),
   ]);
+  const lifeByMatch = Object.fromEntries((lifeRows || []).map((l) => [l.match_id as string, l as { state: ChatListItem['lifeState']; expires_at: string | null }]));
 
   const nameById = Object.fromEntries((profiles || []).map((p) => [p.id, p.name]));
   const convByMatch = Object.fromEntries(
@@ -143,6 +154,8 @@ export async function fetchChatList(userId: string): Promise<ChatListItem[]> {
         lastMessageAt: last?.created_at ?? null,
         priority: priorityIn.has(conversationId) && !iReplied.has(conversationId),
         unreadCount: unreadBy[conversationId] || 0,
+        lifeState: lifeByMatch[m.id]?.state ?? 'active',
+        expiresAt: lifeByMatch[m.id]?.expires_at ?? null,
       } satisfies ChatListItem;
     })
     .filter(Boolean) as ChatListItem[];
@@ -269,7 +282,7 @@ export function subscribeToMessages(
 export async function fetchConversationMeta(
   conversationId: string,
   userId: string
-): Promise<{ otherName: string; otherPhoto: string | null; otherUserId: string; otherIntention: string | null } | null> {
+): Promise<{ matchId: string; otherName: string; otherPhoto: string | null; otherUserId: string; otherIntention: string | null } | null> {
   const { data: conv, error } = await supabase
     .from('conversations')
     .select('id, match_id')
@@ -292,6 +305,7 @@ export async function fetchConversationMeta(
     fetchPrimaryPhotos([otherUserId]),
   ]);
   return {
+    matchId: conv.match_id as string,
     otherUserId,
     otherName: profile?.name || 'Match',
     otherPhoto: photos[otherUserId] ?? null,

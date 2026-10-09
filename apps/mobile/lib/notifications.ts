@@ -147,3 +147,32 @@ export function subscribePushTaps(onTap: (tap: PushTap) => void): () => void {
     .catch(() => {});
   return () => sub.remove();
 }
+
+/**
+ * Date safety: a local (on-device, never sent to us) reminder to check in with your
+ * trusted contact. Works in Expo Go and the APK — no push server involved.
+ */
+export async function scheduleDateCheckIn(name: string, hours: number, conversationId: string | null): Promise<boolean> {
+  if (Platform.OS === 'web' || hours <= 0) return false;
+  try {
+    const { status: existing } = await Notifications.getPermissionsAsync();
+    const status = existing === 'granted' ? existing : (await Notifications.requestPermissionsAsync()).status;
+    if (status !== 'granted') return false;
+    if (Platform.OS === 'android') {
+      await Notifications.setNotificationChannelAsync('default', { name: 'default', importance: Notifications.AndroidImportance.DEFAULT });
+    }
+    const types = (Notifications as unknown as { SchedulableTriggerInputTypes?: { TIME_INTERVAL: string } }).SchedulableTriggerInputTypes;
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: 'Date check-in 💛',
+        body: `How's it going with ${name}? Let your trusted contact know you're OK.`,
+        data: { type: 'date_checkin', conversation_id: conversationId },
+      },
+      trigger: { type: (types?.TIME_INTERVAL ?? 'timeInterval') as never, seconds: Math.round(hours * 3600), repeats: false },
+    });
+    return true;
+  } catch (err) {
+    console.warn('[match] check-in reminder failed', err);
+    return false;
+  }
+}
