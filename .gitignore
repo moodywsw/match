@@ -26,3 +26,6 @@ npm-debug.*
 google-service-account.json
 google-services.json
 *.p8
+
+# seeded test account credentials (supabase/seed)
+TEST_ACCOUNTS.md
