@@ -1,12 +1,12 @@
-> **DRAFT — not legal advice. This text must be reviewed by a qualified lawyer (GDPR / Portuguese law) before the app is published. Items in [brackets] must be completed.**
+> **This text should be reviewed by a qualified lawyer (GDPR / Portuguese law) before the app is published. It is not legal advice.**
 
 # MATCH — Terms of Service
 
-_Last updated: [date] · Version 0.1 (draft)_
+_Last updated: 13 October 2026 · Version 1.0_
 
 ## Agreement
 
-These Terms are a contract between you and [Company legal name], NIF [number], [address], Portugal. By creating an account you accept them and our Privacy Policy.
+These Terms are a contract between you and the Match app developer, an individual based in Portugal. By creating an account you accept them and our Privacy Policy.
 
 ## Eligibility
 
@@ -30,7 +30,7 @@ We do not run criminal background checks and cannot guarantee the conduct of oth
 
 ## Subscriptions (MATCH+ and SUPER MATCH)
 
-Paid plans are billed by Apple App Store or Google Play to your store account. Subscriptions renew automatically at the end of each period at the then-current price unless cancelled at least 24 hours before renewal in your store account settings. Deleting your account does not cancel a subscription. Refunds are handled by Apple or Google under their policies. EU consumers: by starting a subscription you request immediate access to digital content and acknowledge losing the 14-day withdrawal right once access begins, to the extent permitted by law. [Lawyer to confirm.]
+Paid plans are billed by Apple App Store or Google Play to your store account. Subscriptions renew automatically at the end of each period at the then-current price unless cancelled at least 24 hours before renewal in your store account settings. Deleting your account does not cancel a subscription. Refunds are handled by Apple or Google under their policies. EU consumers: by starting a subscription you request immediate access to digital content and acknowledge losing the 14-day withdrawal right once access begins, to the extent permitted by law.
 
 ## Free plan limits
 
@@ -46,9 +46,9 @@ MATCH is provided "as is". To the extent permitted by law, we are not liable for
 
 ## Governing law and disputes
 
-These Terms are governed by Portuguese law. Consumers may use the courts of their place of residence and alternative dispute resolution entities (see www.consumidor.gov.pt) and the EU ODR platform. [Lawyer to confirm.]
+These Terms are governed by Portuguese law. Consumers may use the courts of their place of residence and alternative dispute resolution entities (see www.consumidor.gov.pt) and the EU ODR platform.
 
 ## Contact
 
-[support@yourdomain]
+emtudoe@gmail.com
 

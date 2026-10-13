@@ -1,12 +1,12 @@
-> **DRAFT — not legal advice. This text must be reviewed by a qualified lawyer (GDPR / Portuguese law) before the app is published. Items in [brackets] must be completed.**
+> **This text should be reviewed by a qualified lawyer (GDPR / Portuguese law) before the app is published. It is not legal advice.**
 
 # MATCH — Privacy Policy
 
-_Last updated: [date] · Version 0.1 (draft)_
+_Last updated: 13 October 2026 · Version 1.0_
 
 ## Who we are
 
-MATCH is operated by [Company legal name], NIF [number], registered at [address], Portugal ("we", "us"). We are the data controller for the personal data described here. Contact: [privacy@yourdomain] · Data Protection Officer (if appointed): [name / email].
+MATCH is operated by the Match app developer, an individual based in Portugal ("we", "us"). We are the data controller for the personal data described here. Contact: emtudoe@gmail.com. We have not appointed a Data Protection Officer.
 
 ## Adults only
 
@@ -16,7 +16,7 @@ MATCH is only for people aged 18 or over. We check the age you give us when you 
 
 • Account: email address, password (stored as a hash by our authentication provider), sign-in timestamps.
 • Profile: name, date of birth (we only show your age), gender and who you want to meet, relationship intention, bio, interests, photos, city or approximate location, verification status, your "Friday" answer.
-• Activity: likes, super likes, passes, matches, messages (text, images, voice notes), stories (photos, videos, text, polls, questions) and responses to them, posts, comments, event RSVPs, lives you host or join (comments, gifts, likes and speed-dating rounds), blocks and reports.
+• Activity: likes, super likes, passes, matches, messages (text, images, voice notes), stories (photos, videos, text, polls, questions) and responses to them, posts, comments, event RSVPs, blocks and reports.
 • Device: push notification token, device type and app version, crash and diagnostic logs.
 • Purchases: subscription tier, status, store, product, renewal dates and transaction identifiers. Payments are processed by Apple or Google; we never receive your card details.
 
@@ -38,25 +38,23 @@ Other users see your public profile (name, age, photos, bio, interests, intentio
 
 ## Service providers (processors)
 
-• Supabase Inc. — database, authentication, file storage and server functions (region: [EU region]).
+• Supabase Inc. — database, authentication, file storage and server functions (European Union region where available).
 • Expo (650 Industries Inc.) — delivery of push notifications.
-• Google LLC (Firebase Cloud Messaging) — delivery of push notifications to Android devices.
-• LiveKit Inc. — real-time audio/video for lives and calls (streamed, not recorded).
 • RevenueCat Inc. — subscription management.
 • Apple Inc. / Google LLC — app distribution and payments.
-We have data processing agreements with these providers. Where data is transferred outside the EEA, we rely on the EU–US Data Privacy Framework and/or Standard Contractual Clauses. [Confirm provider list and regions.]
+We have data processing arrangements with these providers. Where data is transferred outside the EEA, we rely on the EU–US Data Privacy Framework and/or Standard Contractual Clauses.
 
 ## How long we keep data
 
 • Stories: deleted automatically 24 hours after posting.
 • Account and profile data: until you delete your account.
-• When you delete your account in the app, your profile, photos, matches, messages you sent, stories, likes and push tokens are erased immediately from our live systems; backups are overwritten within [30] days.
-• Purchase records may be retained for up to [10] years where required by Portuguese tax law.
-• Reports about serious abuse may be retained for up to [X] months to protect other users.
+• When you delete your account in the app, your profile, photos, matches, messages you sent, stories, likes and push tokens are erased immediately from our live systems; backups are overwritten within 30 days.
+• Purchase records may be retained for up to 10 years where required by Portuguese tax law.
+• Reports about serious abuse may be retained for up to 12 months to protect other users.
 
 ## Your rights
 
-You can access, correct, delete, or export your data, object to or restrict certain processing, and withdraw consent at any time (without affecting earlier processing). Delete your account any time in Settings → Delete account. For other requests contact [privacy@yourdomain]; we reply within one month. You may also complain to the Comissão Nacional de Proteção de Dados (CNPD), www.cnpd.pt.
+You can access, correct, delete, or export your data, object to or restrict certain processing, and withdraw consent at any time (without affecting earlier processing). Delete your account any time in Settings → Delete account. For other requests contact emtudoe@gmail.com; we reply within one month. You may also complain to the Comissão Nacional de Proteção de Dados (CNPD), www.cnpd.pt.
 
 ## Security
 

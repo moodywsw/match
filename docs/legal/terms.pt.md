@@ -1,12 +1,12 @@
-> **RASCUNHO — não constitui aconselhamento jurídico. Este texto tem de ser revisto por um advogado qualificado (RGPD / lei portuguesa) antes da publicação da app. Os itens entre [parênteses retos] têm de ser preenchidos.**
+> **Este texto deve ser revisto por um advogado qualificado (RGPD / lei portuguesa) antes da publicação da app. Não constitui aconselhamento jurídico.**
 
 # MATCH — Termos de Serviço
 
-_Última atualização: [data] · Versão 0.1 (rascunho)_
+_Última atualização: 13 de outubro de 2026 · Versão 1.0_
 
 ## Acordo
 
-Estes Termos são um contrato entre si e [Denominação social], NIF [número], [morada], Portugal. Ao criar uma conta aceita estes Termos e a nossa Política de Privacidade.
+Estes Termos são um contrato entre si e o programador da app Match, pessoa singular com residência em Portugal. Ao criar uma conta aceita estes Termos e a nossa Política de Privacidade.
 
 ## Elegibilidade
 
@@ -30,7 +30,7 @@ Não fazemos verificação de registo criminal e não podemos garantir a conduta
 
 ## Subscrições (MATCH+ e SUPER MATCH)
 
-Os planos pagos são cobrados pela App Store da Apple ou pelo Google Play na sua conta da loja. As subscrições renovam-se automaticamente no fim de cada período ao preço em vigor, salvo se as cancelar pelo menos 24 horas antes da renovação nas definições da sua conta da loja. Eliminar a conta não cancela a subscrição. Os reembolsos são tratados pela Apple ou pela Google segundo as respetivas políticas. Consumidores da UE: ao iniciar a subscrição solicita acesso imediato a conteúdo digital e reconhece a perda do direito de livre resolução de 14 dias a partir do início do acesso, na medida permitida por lei. [A confirmar por advogado.]
+Os planos pagos são cobrados pela App Store da Apple ou pelo Google Play na sua conta da loja. As subscrições renovam-se automaticamente no fim de cada período ao preço em vigor, salvo se as cancelar pelo menos 24 horas antes da renovação nas definições da sua conta da loja. Eliminar a conta não cancela a subscrição. Os reembolsos são tratados pela Apple ou pela Google segundo as respetivas políticas. Consumidores da UE: ao iniciar a subscrição solicita acesso imediato a conteúdo digital e reconhece a perda do direito de livre resolução de 14 dias a partir do início do acesso, na medida permitida por lei.
 
 ## Limites do plano gratuito
 
@@ -46,9 +46,9 @@ A MATCH é fornecida "tal como está". Na medida permitida por lei, não somos r
 
 ## Lei aplicável e litígios
 
-Estes Termos regem-se pela lei portuguesa. Os consumidores podem recorrer aos tribunais da sua residência e a entidades de resolução alternativa de litígios (ver www.consumidor.gov.pt) e à plataforma europeia de RLL. [A confirmar por advogado.]
+Estes Termos regem-se pela lei portuguesa. Os consumidores podem recorrer aos tribunais da sua residência e a entidades de resolução alternativa de litígios (ver www.consumidor.gov.pt) e à plataforma europeia de RLL.
 
 ## Contacto
 
-[suporte@seudominio]
+emtudoe@gmail.com
 

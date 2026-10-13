@@ -40,7 +40,7 @@ def para(text):
     return ''.join(f'<p>{html.escape(l)}</p>' for l in lines)
 
 def doc(d, lang):
-    s = f'<p class="draft">{html.escape(BANNER[lang])}</p><h1>{html.escape(d["title"])}</h1><p class="meta">{html.escape(d["updated"])}</p>'
+    s = f'<h1>{html.escape(d["title"])}</h1><p class="meta">{html.escape(d["updated"])}</p>'
     for h, t in d['sections']:
         s += f'<h2>{html.escape(h)}</h2>{para(t)}'
     return s
@@ -48,12 +48,12 @@ def doc(d, lang):
 DELETE = {
  'en': ('Delete your MATCH account', [
    ('In the app (instant)', 'Open MATCH, go to Profile → Settings & privacy → Delete account and confirm. Your profile, photos, matches, messages you sent, stories, likes and push tokens are erased immediately from our live systems.'),
-   ('Without the app', 'Email [privacy@yourdomain] from the address you signed up with, with the subject "Delete my account". We confirm and delete the account within 30 days, usually much sooner.'),
-   ('What we keep', 'Backups are overwritten within [30] days. Purchase records may be kept for up to [10] years where Portuguese tax law requires it. Reports about serious abuse may be kept for up to [X] months to protect other users. Subscriptions are billed by Google or Apple, so cancel them in your store account as well.')]),
+   ('Without the app', 'Email emtudoe@gmail.com from the address you signed up with, with the subject "Delete my account". We confirm and delete the account within 30 days, usually much sooner.'),
+   ('What we keep', 'Backups are overwritten within 30 days. Purchase records may be kept for up to 10 years where Portuguese tax law requires it. Reports about serious abuse may be kept for up to 12 months to protect other users. Subscriptions are billed by Google or Apple, so cancel them in your store account as well.')]),
  'pt': ('Apagar a tua conta MATCH', [
    ('Na app (imediato)', 'Abre a MATCH, vai a Profile → Settings & privacy → Delete account e confirma. O teu perfil, fotos, matches, mensagens que enviaste, stories, likes e tokens de notificação são apagados de imediato dos nossos sistemas.'),
-   ('Sem a app', 'Envia um email para [privacy@yourdomain] a partir do endereço com que te registaste, com o assunto "Apagar a minha conta". Confirmamos e apagamos a conta no prazo de 30 dias, normalmente muito antes.'),
-   ('O que guardamos', 'As cópias de segurança são substituídas em [30] dias. Os registos de compras podem ser guardados até [10] anos quando a lei fiscal portuguesa o exige. Denúncias de abuso grave podem ser guardadas até [X] meses para proteger outros utilizadores. As subscrições são cobradas pela Google ou Apple, por isso cancela-as também na tua conta da loja.')]),
+   ('Sem a app', 'Envia um email para emtudoe@gmail.com a partir do endereço com que te registaste, com o assunto "Apagar a minha conta". Confirmamos e apagamos a conta no prazo de 30 dias, normalmente muito antes.'),
+   ('O que guardamos', 'As cópias de segurança são substituídas em 30 dias. Os registos de compras podem ser guardados até 10 anos quando a lei fiscal portuguesa o exige. Denúncias de abuso grave podem ser guardadas até 12 meses para proteger outros utilizadores. As subscrições são cobradas pela Google ou Apple, por isso cancela-as também na tua conta da loja.')]),
 }
 
 out = ROOT / 'docs/site'; out.mkdir(parents=True, exist_ok=True)
@@ -61,7 +61,7 @@ for lang, sfx in (('en', ''), ('pt', '-pt')):
     (out / f'privacy{sfx}.html').write_text(page(PRIVACY[lang]['title'], lang, doc(PRIVACY[lang], lang)))
     (out / f'terms{sfx}.html').write_text(page(TERMS[lang]['title'], lang, doc(TERMS[lang], lang)))
     t, secs = DELETE[lang]
-    body = f'<p class="draft">{html.escape(BANNER[lang])}</p><h1>{html.escape(t)}</h1>' + ''.join(f'<h2>{html.escape(h)}</h2>{para(x)}' for h, x in secs)
+    body = f'<h1>{html.escape(t)}</h1>' + ''.join(f'<h2>{html.escape(h)}</h2>{para(x)}' for h, x in secs)
     (out / f'delete-account{sfx}.html').write_text(page(t, lang, body))
 (out / 'index.html').write_text(page('MATCH', 'en', '<h1>MATCH</h1><p>Dating with a spark. 18+ only.</p><p><a href="privacy.html">Privacy Policy</a> · <a href="terms.html">Terms of Service</a> · <a href="delete-account.html">Delete your account</a></p>'))
 print(sorted(p.name for p in out.iterdir()))
