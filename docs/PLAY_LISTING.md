@@ -56,8 +56,8 @@ MATCH is free: create a profile, like, match, chat, join events and watch lives.
 • SUPER MATCH: everything in MATCH+, plus incognito, see who viewed you, unlimited super likes and message priority.
 Subscriptions renew automatically until cancelled in Google Play. MATCH coins are optional: use them for gifts in lives or to boost your profile. Earn free coins with your daily streak and by inviting friends.
 
-Terms: [TERMS_URL]
-Privacy: [PRIVACY_URL]
+Terms: https://moodywsw.github.io/match/site/terms.html
+Privacy: https://moodywsw.github.io/match/site/privacy.html
 ```
 
 ## 2. Store listing: Portuguese (pt-PT)
@@ -106,12 +106,12 @@ O MATCH é grátis: cria o perfil, dá likes, faz match, conversa, vai a eventos
 • SUPER MATCH: tudo do MATCH+, mais modo incógnito, quem visitou o teu perfil, super likes ilimitados e prioridade nas mensagens.
 As subscrições renovam automaticamente até as cancelares no Google Play. As moedas MATCH são opcionais: servem para presentes nos lives ou para dar boost ao teu perfil. Ganha moedas grátis com a sequência diária e convidando amigos.
 
-Termos: [TERMS_URL]
-Privacidade: [PRIVACY_URL]
+Termos: https://moodywsw.github.io/match/site/terms.html
+Privacidade: https://moodywsw.github.io/match/site/privacy.html
 ```
 
-**Category:** Dating · **Tags:** Dating, Social, Events · **Contact email:** [support@…] ·
-**Website:** [MARKETING_URL] · **Privacy policy URL:** [PRIVACY_URL] (required)
+**Category:** Dating · **Tags:** Dating, Social, Events · **Contact email:** emtudoe@gmail.com ·
+**Website:** https://moodywsw.github.io/match/site/index.html · **Privacy policy URL:** https://moodywsw.github.io/match/site/privacy.html (required)
 
 ---
 
@@ -167,7 +167,7 @@ separately in **Target audience** below.
 
 | Section | Answer |
 |---|---|
-| Privacy policy | [PRIVACY_URL] |
+| Privacy policy | https://moodywsw.github.io/match/site/privacy.html |
 | Ads | **No, the app has no ads** (no ad SDKs) |
 | App access | **Some functionality is restricted** → give the reviewer a demo account with a complete profile (email and password; create a dedicated `review@` account, not a seeded test one) and note that live video needs a second device. |
 | Target audience | **18+ only**. Not designed for children. The app enforces 18+ at sign-up (date of birth). |
@@ -176,7 +176,7 @@ separately in **Target audience** below.
 | COVID-19 / health / financial features | No / No / No |
 | Government app | No |
 | Data safety | See §6 |
-| Account deletion | In-app: Profile → Settings & privacy → Delete account. **Web URL: [DELETE_URL]**, a page explaining how to request deletion without the app (required). |
+| Account deletion | In-app: Profile → Settings & privacy → Delete account. **Web URL: https://moodywsw.github.io/match/site/delete-account.html**, a page explaining how to request deletion without the app (required). |
 | Dating app declaration | If asked: it's a dating app for adults, with mutual-match messaging only and real-time video (lives and calls). |
 | Foreground service permissions | Not needed if `enableBackgroundPlayback: false` ships (see ANDROID_PUSH.md). Otherwise declare "media playback" with a video. |
 | Photo and video permissions | Uses the system photo picker; no broad media access needed (block `READ_EXTERNAL_STORAGE`, see ANDROID_PUSH.md). |
@@ -187,7 +187,7 @@ separately in **Target audience** below.
 - Does the app collect or share any of the required user data types? **Yes**
 - Is all user data encrypted in transit? **Yes** (HTTPS/TLS to Supabase, Expo, RevenueCat,
   LiveKit)
-- Do you provide a way for users to request deletion? **Yes** (in-app + [DELETE_URL])
+- Do you provide a way for users to request deletion? **Yes** (in-app + https://moodywsw.github.io/match/site/delete-account.html)
 - Shared with third parties? **No.** Supabase, Expo, RevenueCat, LiveKit and Google FCM are
   *service providers* acting on our behalf, which Google doesn't count as "sharing". Data
   shown to other users at the user's request (profile, messages) isn't "sharing" either.
